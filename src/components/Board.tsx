@@ -12,10 +12,44 @@ interface Props {
   maxTile: number
   /** 本局是否超过了开局时的最高分 */
   beatRecord: boolean
-  /** 连锁序号，每次变化播放一次震动 */
+  /** 震动序号，每次变化播放一次震动 */
   shakeSeq: number
+  /** 震动强度倍率，越大晃得越狠 */
+  shakeMag: number
+  /** 正在庆祝的里程碑（横幅 + 彩纸），为 null 时不显示 */
+  celebrate: { value: number; key: number } | null
+  /** 庆祝动画播完的回调，用于清除庆祝态 */
+  onCelebrateEnd: () => void
   onRestart: () => void
   onKeepPlaying: () => void
+}
+
+/** 里程碑庆祝层：横幅 + 一把彩纸，纯装饰 */
+function Celebrate({
+  value,
+  onEnd,
+}: {
+  value: number
+  onEnd: () => void
+}) {
+  const CONFETTI = 18
+  return (
+    <div className="celebrate" aria-hidden="true">
+      <div className="confetti">
+        {Array.from({ length: CONFETTI }, (_, i) => (
+          <span
+            key={i}
+            className="confetto"
+            style={{ '--i': i, '--n': CONFETTI } as React.CSSProperties}
+          />
+        ))}
+      </div>
+      {/* 横幅动画最长，用它的结束来清除整个庆祝层 */}
+      <div className="milestone-banner" onAnimationEnd={onEnd}>
+        {value}!
+      </div>
+    </div>
+  )
 }
 
 /** 结束时的复盘卡片：把一局的过程讲成几个数字 */
@@ -56,6 +90,9 @@ export function Board({
   maxTile,
   beatRecord,
   shakeSeq,
+  shakeMag,
+  celebrate,
+  onCelebrateEnd,
   onRestart,
   onKeepPlaying,
 }: Props) {
@@ -81,8 +118,9 @@ export function Board({
     <div
       className={`board${danger && !overlayVisible ? ' board-danger' : ''}${shakeClass}`}
       data-size={core.size}
-      // 覆盖 :root 的默认值，.grid-bg 的 repeat() 与 .tile 的位置公式都会跟随
-      style={{ '--size': core.size } as React.CSSProperties}
+      // 覆盖 :root 的默认值，.grid-bg 的 repeat() 与 .tile 的位置公式都会跟随；
+      // --shake-mag 供震动关键帧按强度缩放位移
+      style={{ '--size': core.size, '--shake-mag': shakeMag } as React.CSSProperties}
     >
       <GridBackground size={core.size} />
 
@@ -97,6 +135,11 @@ export function Board({
           <Tile key={tile.id} tile={tile} />
         ))}
       </div>
+
+      {/* key 带上里程碑序号：每次新里程碑都重挂载，动画从头重播 */}
+      {celebrate && (
+        <Celebrate key={celebrate.key} value={celebrate.value} onEnd={onCelebrateEnd} />
+      )}
 
       {showWin && (
         <div className="overlay overlay-win" role="alertdialog" aria-label="你赢了">

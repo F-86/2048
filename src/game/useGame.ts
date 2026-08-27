@@ -67,8 +67,10 @@ interface GameState {
   sound: SoundEvent | null
   /** 音效序号，保证同类音效连续触发时 effect 仍会重跑 */
   soundSeq: number
-  /** 连锁震动的序号：值一变就重播震动动画 */
+  /** 震动的序号：值一变就重播震动动画 */
   shakeSeq: number
+  /** 震动强度倍率(1≈普通合并，越大晃得越狠)，供 CSS 缩放位移 */
+  shakeMag: number
 }
 
 type Action =
@@ -128,8 +130,15 @@ function reducer(state: GameState, action: Action): GameState {
         gainSeq,
         sound,
         soundSeq,
-        // 两对以上才震，避免每步都晃
-        shakeSeq: mergeCount > 1 ? state.shakeSeq + 1 : state.shakeSeq,
+        // 每次合并都晃一下,连锁越多、合成的数字越大晃得越狠
+        shakeSeq: mergeCount >= 1 ? state.shakeSeq + 1 : state.shakeSeq,
+        shakeMag:
+          mergeCount >= 1
+            ? Math.min(
+                1 + 0.5 * (mergeCount - 1) + (topValue >= 512 ? 1 : topValue >= 128 ? 0.5 : 0),
+                3,
+              )
+            : state.shakeMag,
       }
     }
 
@@ -224,21 +233,29 @@ function loadInitial(): GameState {
     sound: null,
     soundSeq: 0,
     shakeSeq: 0,
+    shakeMag: 1,
   }
 }
 
+/** 值得庆祝的里程碑方块：达到这些数字会放横幅 + 彩纸 + 凯旋音 */
+const MILESTONE = 128
+
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, undefined, loadInitial)
-  const { core, history, best, bestAtRunStart, stats, gain, sound, shakeSeq } = state
+  const { core, history, best, bestAtRunStart, stats, gain, sound, shakeSeq, shakeMag } = state
   const size = core.size
 
   const [muted, setMuted] = useState(loadMuted)
+  /** 当前正在庆祝的里程碑（横幅 + 彩纸），播完由 UI 清空 */
+  const [celebrate, setCelebrate] = useState<{ value: number; key: number } | null>(null)
 
   // 空格数少于阈值即为危险。必须用 emptyCells 而不是 tiles.length：
   // 合并后残影与合并块同占一格，按数组长度会高估占用
   const danger = emptyCells(core).length <= DANGER_CELLS && !core.over
   // 破纪录只在本局真的超过「开局时的最高分」时成立；全新存档（基准为 0）不算
   const beatRecord = bestAtRunStart > 0 && core.score > bestAtRunStart
+  // 本局最大的方块（忽略残影）。空棋盘时为 0，避免 Math.max(...[]) 得到 -Infinity
+  const maxTile = core.tiles.reduce((m, t) => (t.isGhost || t.value <= m ? m : t.value), 0)
 
   // 静音偏好变化时同步到音频与存储
   useEffect(() => {
@@ -295,6 +312,28 @@ export function useGame() {
     prevRecord.current = beatRecord
   }, [beatRecord])
 
+  // 里程碑庆祝：本局最大方块首次达到某个「大数字」时放横幅 + 彩纸 + 凯旋音。
+  // ref 用载入时的 maxTile 初始化，读档进入一个已经很大的局面不会在加载时就放礼花。
+  const prevMilestone = useRef(maxTile)
+  const celebrateKey = useRef(0)
+  useEffect(() => {
+    if (maxTile > prevMilestone.current && maxTile >= MILESTONE) {
+      celebrateKey.current += 1
+      setCelebrate({ value: maxTile, key: celebrateKey.current })
+      sfx.milestone(maxTile)
+    }
+    prevMilestone.current = maxTile
+  }, [maxTile])
+
+  const clearCelebrate = useCallback(() => setCelebrate(null), [])
+
+  // 连击升级音:streak 增大且达到 2 起才响一记「叮!」;归零不响,读档也不误触发
+  const prevStreak = useRef(core.streak)
+  useEffect(() => {
+    if (core.streak > prevStreak.current && core.streak >= 2) sfx.comboUp(core.streak)
+    prevStreak.current = core.streak
+  }, [core.streak])
+
   // 持久化对局（按尺寸分别存）
   useEffect(() => {
     saveGame(size, { core, history })
@@ -341,9 +380,6 @@ export function useGame() {
   const undoCandidate = history[history.length - 1]
   const canUndo = undoCandidate !== undefined && undoCandidate.score >= UNDO_COST
 
-  /** 本局最大的方块（忽略残影）。空棋盘时返回 0，避免 Math.max(...[]) 得到 -Infinity */
-  const maxTile = core.tiles.reduce((m, t) => (t.isGhost || t.value <= m ? m : t.value), 0)
-
   return useMemo(
     () => ({
       core,
@@ -357,6 +393,10 @@ export function useGame() {
       stats,
       maxTile,
       shakeSeq,
+      shakeMag,
+      celebrate,
+      clearCelebrate,
+      streak: core.streak,
       nextTile: core.next,
       undoCost: UNDO_COST,
       move,
@@ -378,6 +418,9 @@ export function useGame() {
       stats,
       maxTile,
       shakeSeq,
+      shakeMag,
+      celebrate,
+      clearCelebrate,
       move,
       undo,
       restart,

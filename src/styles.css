@@ -371,19 +371,20 @@ body {
   animation: board-shake-b 260ms ease-in-out both;
 }
 
+/* 位移都乘 --shake-mag：连锁越多、合成的数字越大，晃得越狠 */
 @keyframes board-shake-a {
   0%,
   100% {
     transform: translate(0, 0);
   }
   20% {
-    transform: translate(-4px, 2px);
+    transform: translate(calc(-4px * var(--shake-mag, 1)), calc(2px * var(--shake-mag, 1)));
   }
   45% {
-    transform: translate(3px, -2px);
+    transform: translate(calc(3px * var(--shake-mag, 1)), calc(-2px * var(--shake-mag, 1)));
   }
   70% {
-    transform: translate(-2px, 1px);
+    transform: translate(calc(-2px * var(--shake-mag, 1)), calc(1px * var(--shake-mag, 1)));
   }
 }
 
@@ -394,13 +395,13 @@ body {
     transform: translate(0, 0);
   }
   20% {
-    transform: translate(-4px, 2px);
+    transform: translate(calc(-4px * var(--shake-mag, 1)), calc(2px * var(--shake-mag, 1)));
   }
   45% {
-    transform: translate(3px, -2px);
+    transform: translate(calc(3px * var(--shake-mag, 1)), calc(-2px * var(--shake-mag, 1)));
   }
   70% {
-    transform: translate(-2px, 1px);
+    transform: translate(calc(-2px * var(--shake-mag, 1)), calc(1px * var(--shake-mag, 1)));
   }
 }
 
@@ -571,10 +572,274 @@ body {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.22);
+    transform: scale(1.24);
   }
   100% {
     transform: scale(1);
+  }
+}
+
+/* ---------- 合并爽感:高光 / 火花 / 飘分 ---------- */
+/* 都在方块滑到位后(延迟 --move-duration)才触发,和弹跳同步 */
+
+/* 合并方块抬到邻居之上，保证爆炸特效不被其它方块盖住 */
+.tile-merged {
+  z-index: 3;
+}
+
+.tile-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  /* 特效要溢出格子往外炸，不能被裁掉 */
+  overflow: visible;
+}
+
+/* 冲击波:一圈从中心向外扩散并淡出的光环 */
+.tile-shockwave {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 244, 200, 0.9);
+  box-shadow: 0 0 16px rgba(255, 220, 120, 0.75), inset 0 0 12px rgba(255, 230, 150, 0.5);
+  opacity: 0;
+  animation: tile-shockwave 460ms var(--move-duration) ease-out both;
+}
+
+@keyframes tile-shockwave {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* 高光:合并瞬间一大团白光炸开(比格子大,往外溢) */
+.tile-flash {
+  position: absolute;
+  inset: -35%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.95),
+    rgba(255, 240, 180, 0.45) 45%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  opacity: 0;
+  animation: tile-flash 340ms var(--move-duration) ease-out both;
+}
+
+@keyframes tile-flash {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+/* 火花:12 个方向各飞出一颗大亮点,方向由 nth-child 指定(cqmin 随棋盘缩放) */
+.tile-sparks {
+  position: absolute;
+  inset: 0;
+}
+
+.spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9cqmin;
+  height: 9cqmin;
+  margin: -4.5cqmin 0 0 -4.5cqmin;
+  border-radius: 50%;
+  background: rgba(255, 236, 160, 0.98);
+  box-shadow: 0 0 10px rgba(255, 214, 110, 0.9);
+  opacity: 0;
+  animation: spark-fly 480ms var(--move-duration) cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.spark:nth-child(1) {
+  --dx: 0cqmin;
+  --dy: -16cqmin;
+}
+.spark:nth-child(2) {
+  --dx: 8cqmin;
+  --dy: -13.9cqmin;
+}
+.spark:nth-child(3) {
+  --dx: 13.9cqmin;
+  --dy: -8cqmin;
+}
+.spark:nth-child(4) {
+  --dx: 16cqmin;
+  --dy: 0cqmin;
+}
+.spark:nth-child(5) {
+  --dx: 13.9cqmin;
+  --dy: 8cqmin;
+}
+.spark:nth-child(6) {
+  --dx: 8cqmin;
+  --dy: 13.9cqmin;
+}
+.spark:nth-child(7) {
+  --dx: 0cqmin;
+  --dy: 16cqmin;
+}
+.spark:nth-child(8) {
+  --dx: -8cqmin;
+  --dy: 13.9cqmin;
+}
+.spark:nth-child(9) {
+  --dx: -13.9cqmin;
+  --dy: 8cqmin;
+}
+.spark:nth-child(10) {
+  --dx: -16cqmin;
+  --dy: 0cqmin;
+}
+.spark:nth-child(11) {
+  --dx: -13.9cqmin;
+  --dy: -8cqmin;
+}
+.spark:nth-child(12) {
+  --dx: -8cqmin;
+  --dy: -13.9cqmin;
+}
+
+@keyframes spark-fly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.2);
+  }
+}
+
+/* 飘分:在方块处向上冒出的大号 +N */
+.tile-gain {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: clamp(18px, 7cqw, 40px);
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2), 0 3px 8px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  animation: tile-gain 560ms var(--move-duration) ease-out both;
+}
+
+@keyframes tile-gain {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.6);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.25);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-46px) scale(1);
+  }
+}
+
+/* ---------- 屏幕右上角连击喇叭(脱离棋盘,固定定位) ---------- */
+
+.combo-meter {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 50; /* 浮在所有内容之上 */
+  pointer-events: none;
+  text-align: right;
+}
+
+/* 连击断了之后停留一会儿再淡出——不一下就消失 */
+.combo-leaving {
+  animation: combo-leave 2600ms ease-out forwards;
+}
+
+@keyframes combo-leave {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.combo-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1;
+  transform-origin: top right;
+  animation: combo-pop 420ms cubic-bezier(0.2, 1.5, 0.35, 1) both;
+}
+
+.combo-word {
+  font-size: clamp(14px, 4vmin, 24px);
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.combo-count {
+  font-size: clamp(34px, 12vmin, 76px);
+  font-weight: 900;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.18), 0 5px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* 连击越高越暖越炸 */
+.combo-meter[data-level='2'] .combo-count {
+  color: #f7e26b;
+}
+.combo-meter[data-level='3'] .combo-count {
+  color: #ffc64d;
+}
+.combo-meter[data-level='4'] .combo-count {
+  color: #ff9f43;
+}
+.combo-meter[data-level='5'] .combo-count {
+  color: #ff6b3d;
+}
+.combo-meter[data-level='6'] .combo-count {
+  color: #ff3d6e;
+}
+/* 封顶:彩虹渐变字 */
+.combo-meter[data-level='7'] .combo-count {
+  background: linear-gradient(90deg, #ff3d6e, #ffc64d, #7cc6a3, #8f9ff2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes combo-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.2) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
   }
 }
 
@@ -710,6 +975,98 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- 里程碑庆祝:横幅 + 彩纸 ---------- */
+
+.celebrate {
+  position: absolute;
+  inset: 0;
+  z-index: 8; /* 高于方块(1~2)，低于胜负遮罩(10) */
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+}
+
+/* 每片彩纸从顶部不同横位飘落并翻转,横位与延迟由 --i 决定,无随机 */
+.confetto {
+  position: absolute;
+  top: -8%;
+  left: calc(var(--i) * (100% / (var(--n) - 1)));
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: confetto-fall 1150ms ease-in both;
+  animation-delay: calc(var(--i) * 22ms);
+}
+
+.confetto:nth-child(4n + 1) {
+  background: #f2b179;
+}
+.confetto:nth-child(4n + 2) {
+  background: #edc22e;
+}
+.confetto:nth-child(4n + 3) {
+  background: #7cc6a3;
+}
+.confetto:nth-child(4n) {
+  background: #8f9ff2;
+}
+
+@keyframes confetto-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-10%) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(340%) rotate(560deg);
+  }
+}
+
+/* 里程碑数字横幅:弹入放大再淡出 */
+.milestone-banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(44px, 18vmin, 120px);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.15), 0 8px 22px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  animation: milestone-pop 1150ms ease-out both;
+}
+
+@keyframes milestone-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  32% {
+    transform: scale(1);
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
 /* ---------- 底部 ---------- */
 
 .footer {
@@ -741,7 +1098,11 @@ body {
   .score-record,
   .recap,
   .board-shake-0,
-  .board-shake-1 {
+  .board-shake-1,
+  .tile-flash,
+  .tile-gain,
+  .milestone-banner,
+  .combo-inner {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
@@ -753,5 +1114,15 @@ body {
   .board-danger::after {
     animation: none !important;
     opacity: 0.8;
+  }
+
+  /*
+   * 火花与彩纸是纯装饰的运动,对前庭敏感者直接不渲染——
+   * 里程碑横幅仍会瞬间出现(信息不丢),但没有满屏飞溅。
+   */
+  .tile-sparks,
+  .tile-shockwave,
+  .confetti {
+    display: none !important;
   }
 }

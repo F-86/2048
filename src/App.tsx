@@ -1,4 +1,5 @@
 import { Board } from './components/Board'
+import { ComboMeter } from './components/ComboMeter'
 import { ScoreBoard } from './components/ScoreBoard'
 import { useGame } from './game/useGame'
 import { useInput } from './game/useInput'
@@ -18,6 +19,10 @@ export default function App() {
     stats,
     maxTile,
     shakeSeq,
+    shakeMag,
+    celebrate,
+    clearCelebrate,
+    streak,
     nextTile,
     undoCost,
     move,
@@ -96,6 +101,9 @@ export default function App() {
         maxTile={maxTile}
         beatRecord={beatRecord}
         shakeSeq={shakeSeq}
+        shakeMag={shakeMag}
+        celebrate={celebrate}
+        onCelebrateEnd={clearCelebrate}
         onRestart={restart}
         onKeepPlaying={keepPlaying}
       />
@@ -103,6 +111,9 @@ export default function App() {
       <footer className="footer">
         方向键 / WASD / HJKL 移动 · Z 撤销 · M 静音 · 手机在棋盘上滑动
       </footer>
+
+      {/* 连击喇叭固定在屏幕右上角，脱离棋盘，不遮挡方块 */}
+      <ComboMeter streak={streak} />
     </div>
   )
 }

@@ -150,6 +150,7 @@ describe('sfx — 基本发声', () => {
       ['move', () => sfx.move()],
       ['merge', () => sfx.merge(8)],
       ['combo', () => sfx.combo(8, 3)],
+      ['milestone', () => sfx.milestone(256)],
       ['danger', () => sfx.danger()],
       ['record', () => sfx.record()],
       ['win', () => sfx.win()],
@@ -197,12 +198,12 @@ describe('sfx — 合并音高', () => {
     for (const v of values) {
       created.oscillators.length = 0
       sfx.merge(v)
-      // 取基频（第一个振荡器），第二个是高八度泛音
-      const base = created.oscillators[0].frequency.calls.find(
-        (c) => c.method === 'setValueAtTime',
-      )
-      expect(base).toBeDefined()
-      pitches.push(base!.args[0])
+      // 取所有振荡器里最高的基频作为「旋律音」——低频那颗是打击体,不代表音高
+      const bases = created.oscillators
+        .map((o) => o.frequency.calls.find((c) => c.method === 'setValueAtTime')?.args[0])
+        .filter((f): f is number => typeof f === 'number')
+      expect(bases.length).toBeGreaterThan(0)
+      pitches.push(Math.max(...bases))
     }
 
     for (let i = 1; i < pitches.length; i++) {
@@ -225,14 +226,17 @@ describe('sfx — 合并音高', () => {
     }
   })
 
-  it('合并会叠加泛音（两个振荡器）', async () => {
+  it('合并叠加高八度泛音,并带一层低频打击体', async () => {
     const { sfx } = await freshSfx()
     sfx.merge(32)
-    expect(created.oscillators.length).toBe(2)
-    const f0 = created.oscillators[0].frequency.calls[0].args[0]
-    const f1 = created.oscillators[1].frequency.calls[0].args[0]
-    // 第二个是第一个的高八度
-    expect(f1 / f0).toBeCloseTo(2, 1)
+    // 打击体 + 主音 + 高八度泛音
+    expect(created.oscillators.length).toBe(3)
+    const bases = created.oscillators.map((o) => o.frequency.calls[0].args[0])
+    // 三个基频里存在一对成高八度(2×)关系:主音与其泛音
+    const hasOctave = bases.some((a) => bases.some((b) => Math.abs(b / a - 2) < 0.1))
+    expect(hasOctave).toBe(true)
+    // 也存在一颗明显更低的打击体
+    expect(Math.min(...bases)).toBeLessThan(Math.max(...bases) / 2)
   })
 })
 
@@ -282,9 +286,10 @@ describe('sfx — 多音音效', () => {
     sfx.combo(8, 4)
     expect(created.oscillators.length).toBeGreaterThan(two)
 
-    // 音高逐级上行，起音时间依次延后
-    const freqs = created.oscillators.map((o) => o.frequency.calls[0].args[0])
-    const starts = created.oscillators.map((o) => o.started[0])
+    // 最后一颗是低频打击体,不属于旋律,排除后再看琶音是否逐级上行、依次延后
+    const melodic = created.oscillators.slice(0, -1)
+    const freqs = melodic.map((o) => o.frequency.calls[0].args[0])
+    const starts = melodic.map((o) => o.started[0])
     for (let i = 1; i < freqs.length; i++) {
       expect(freqs[i]).toBeGreaterThan(freqs[i - 1])
       expect(starts[i]).toBeGreaterThan(starts[i - 1])
@@ -294,7 +299,33 @@ describe('sfx — 多音音效', () => {
   it('连锁音的音数有上限，超长连锁不会无限爬高', async () => {
     const { sfx } = await freshSfx()
     sfx.combo(8, 99)
-    expect(created.oscillators.length).toBeLessThanOrEqual(4)
+    // 旋律部分(除去低频打击体)最多爬 4 级
+    expect(created.oscillators.slice(0, -1).length).toBeLessThanOrEqual(4)
+  })
+
+  it('里程碑音是上行大琶音,比破纪录音更长更满', async () => {
+    const { sfx } = await freshSfx()
+    sfx.milestone(256)
+    // 4 个和弦音 + 每个的高八度闪光 = 8 个振荡器
+    expect(created.oscillators.length).toBe(8)
+    // 起音时间存在多档延迟,听感是一串上行而非同时炸响
+    const starts = new Set(created.oscillators.map((o) => o.started[0]))
+    expect(starts.size).toBeGreaterThanOrEqual(4)
+  })
+
+  it('连击升级音随等级升高,起音更高', async () => {
+    const { sfx } = await freshSfx()
+    const pitchAt = (level: number) => {
+      created.oscillators.length = 0
+      sfx.comboUp(level)
+      const bases = created.oscillators.map(
+        (o) => o.frequency.calls.find((c) => c.method === 'setValueAtTime')!.args[0],
+      )
+      return Math.min(...bases) // 主音是较低的那颗,泛音更高
+    }
+    // 连击等级越高,主音起音越高
+    expect(pitchAt(4)).toBeGreaterThan(pitchAt(2))
+    expect(pitchAt(6)).toBeGreaterThan(pitchAt(4))
   })
 
   it('危险音是两声低频心跳', async () => {

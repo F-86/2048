@@ -2,13 +2,14 @@
  * 音效合成。
  *
  * 全部用 Web Audio 实时生成，不加载任何音频文件（零体积、无版权问题）。
- * 风格取向：克制轻柔——短促、低音量、快速衰减，长时间游戏不会吵。
+ * 风格取向：合并要「有肉、有打击感」——在纯合成的前提下尽量做爽,
+ * 但仍保持短促、快速衰减,长时间游戏不至于吵。
  */
 
 const STORAGE_KEY = 'react-2048/muted-v1'
 
-/** 主音量上限，刻意压低以保证「轻柔」 */
-const MASTER_GAIN = 0.22
+/** 主音量上限。为了让合并有打击感,比早期「克制」的 0.22 略提一档 */
+const MASTER_GAIN = 0.3
 
 /** 五声音阶（C 大调去掉四度七度）：任意组合都不刺耳，适合随机音高 */
 const PENTATONIC = [0, 2, 4, 7, 9]
@@ -130,14 +131,22 @@ export const sfx = {
   /**
    * 合并：音高随合成的数字升高，制造进阶感。
    * 4 → 音阶第 0 级，8 → 第 1 级，依此类推，超出后按八度循环。
+   *
+   * 为了有「打击感」,在清脆的音高之外再叠一层低频「肉体」和一记噪声脉冲,
+   * 数字越大低频越沉,合并越有分量。
    */
   merge(value: number) {
     resume()
     const freq = noteToFreq(valueToSemitone(value) - 9) // 以 C4 附近起音
 
-    tone({ freq, duration: 0.2, type: 'triangle', gain: 0.5 })
-    // 叠加高八度泛音，让合并声更明亮清脆
-    tone({ freq: freq * 2, duration: 0.14, type: 'sine', gain: 0.18, delay: 0.01 })
+    // 打击体:一记短噪声 + 迅速下滑的低频,给合并一个「咚」的落点
+    noiseTick(0.14, 0.05)
+    const body = Math.max(70, 150 - Math.round(Math.log2(value)) * 8)
+    tone({ freq: body, duration: 0.12, type: 'sine', gain: 0.4, glideTo: body * 0.6 })
+
+    // 音高主体 + 高八度泛音,明亮清脆
+    tone({ freq, duration: 0.22, type: 'triangle', gain: 0.6 })
+    tone({ freq: freq * 2, duration: 0.16, type: 'sine', gain: 0.22, delay: 0.01 })
   },
 
   /**
@@ -159,10 +168,56 @@ export const sfx = {
         duration: 0.22,
         type: 'triangle',
         // 后面的音略轻，听感是「一串」而不是「一堆」
-        gain: 0.46 - i * 0.05,
+        gain: 0.56 - i * 0.05,
         delay: i * 0.06,
       })
     }
+    // 连锁也给一记打击体,和 merge 一样有落点
+    noiseTick(0.12, 0.05)
+    tone({ freq: 96, duration: 0.12, type: 'sine', gain: 0.34, glideTo: 60 })
+  },
+
+  /**
+   * 连击升级:每多连一击就更高、更亮的一记「叮!」,叠在合并打击声之上做重音。
+   * 连击越高起音越高,升调感越强;用五声音阶保证任意等级都不刺耳。
+   */
+  comboUp(level: number) {
+    resume()
+    const step = Math.max(0, level - 2)
+    const octave = Math.floor(step / PENTATONIC.length)
+    // 整体拔高一个八度,让连击音比合并音更亮、更"跳"
+    const semitone = PENTATONIC[step % PENTATONIC.length] + octave * 12 + 12
+    const freq = noteToFreq(semitone - 9)
+    tone({ freq, duration: 0.16, type: 'triangle', gain: 0.5, glideTo: freq * 1.5 })
+    tone({ freq: freq * 2, duration: 0.1, type: 'sine', gain: 0.2, delay: 0.02 })
+  },
+
+  /**
+   * 里程碑：本局最大方块达到一个大数字时的凯旋音。
+   * 比破纪录音更长、更亮——上行大琶音 + 高处的闪光泛音。
+   */
+  milestone(value: number) {
+    resume()
+    const root = valueToSemitone(value)
+    // 大三和弦上行 + 八度收尾,喜庆但不吵
+    const arpeggio = [root, root + 4, root + 7, root + 12]
+    arpeggio.forEach((semi, i) => {
+      tone({
+        freq: noteToFreq(semi - 9),
+        duration: 0.38,
+        type: 'triangle',
+        gain: 0.5,
+        delay: i * 0.08,
+      })
+      // 高八度闪光,像礼花的亮片
+      tone({
+        freq: noteToFreq(semi + 3),
+        duration: 0.2,
+        type: 'sine',
+        gain: 0.16,
+        delay: i * 0.08 + 0.02,
+      })
+    })
   },
 
   /** 胜利：上行的小琶音 */

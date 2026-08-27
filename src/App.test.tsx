@@ -1,13 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
-/** 读出棋盘上所有活方块的数值（排除残影） */
+/**
+ * 读出棋盘上所有活方块的数值（排除残影）。
+ * 只读 .tile-inner 的文字：合并时 .tile 里还挂着装饰性的「+N」飘分，
+ * 直接读 .tile 的 textContent 会把数字和飘分拼在一起变成 NaN。
+ */
 function visibleValues(): number[] {
   return Array.from(document.querySelectorAll('.tile'))
     .filter((el) => !el.classList.contains('tile-ghost'))
-    .map((el) => Number(el.textContent))
+    .map((el) => Number(el.querySelector('.tile-inner')?.textContent))
 }
 
 function scoreValue(): number {
@@ -895,5 +899,131 @@ describe('App — StrictMode 下不重复计分', () => {
     press('ArrowDown')
     expect(scoreValue()).toBeGreaterThanOrEqual(afterFirst)
     expect(scoreValue()).toBeLessThan(afterFirst * 2)
+  })
+})
+
+describe('App — 里程碑庆祝', () => {
+  function seed4x4(tiles: { id: number; row: number; col: number; value: number }[], score = 0) {
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles,
+          score,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: tiles.length + 1,
+          next: 2,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  it('本局最大方块达到 128 时弹出庆祝横幅与彩纸', () => {
+    seed4x4([
+      { id: 1, row: 0, col: 0, value: 64 },
+      { id: 2, row: 0, col: 1, value: 64 },
+    ])
+    render(<App />)
+    // 载入时最大只有 64，不该有庆祝
+    expect(document.querySelector('.milestone-banner')).toBeNull()
+
+    press('ArrowLeft') // 64 + 64 → 128
+    const banner = document.querySelector('.milestone-banner')
+    expect(banner).not.toBeNull()
+    expect(banner!.textContent).toBe('128!')
+    expect(document.querySelectorAll('.confetto').length).toBeGreaterThan(0)
+  })
+
+  it('读档进入一个已经很大的局面时，加载不触发庆祝', () => {
+    seed4x4(
+      [
+        { id: 1, row: 0, col: 0, value: 512 },
+        { id: 2, row: 1, col: 1, value: 2 },
+      ],
+      5000,
+    )
+    render(<App />)
+    expect(document.querySelector('.milestone-banner')).toBeNull()
+  })
+
+  it('未到里程碑的小合并不触发庆祝', () => {
+    seed4x4([
+      { id: 1, row: 0, col: 0, value: 8 },
+      { id: 2, row: 0, col: 1, value: 8 },
+    ])
+    render(<App />)
+    press('ArrowLeft') // 8 + 8 → 16，远未到 128
+    expect(document.querySelector('.milestone-banner')).toBeNull()
+  })
+})
+
+describe('App — 右上角连击喇叭', () => {
+  /** 存档可带上任意 streak（连击数随对局持久化） */
+  function seedWithStreak(
+    streak: number,
+    tiles: { id: number; row: number; col: number; value: number }[],
+  ) {
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles,
+          score: 0,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: tiles.length + 1,
+          next: 2,
+          streak,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  it('连击达到 2 起时右上角出现连击喇叭，显示连击数', () => {
+    seedWithStreak(3, [{ id: 1, row: 0, col: 0, value: 2 }])
+    render(<App />)
+    const meter = document.querySelector('.combo-meter')
+    expect(meter).not.toBeNull()
+    expect(meter!.querySelector('.combo-count')!.textContent).toBe('×3')
+  })
+
+  it('连击不足 2 时不显示', () => {
+    seedWithStreak(1, [{ id: 1, row: 0, col: 0, value: 2 }])
+    render(<App />)
+    expect(document.querySelector('.combo-meter')).toBeNull()
+  })
+
+  it('走出一步没有合并时连击断裂，喇叭先停留再淡出', () => {
+    vi.useFakeTimers()
+    try {
+      // 单个方块不在最左列：向左只位移、不合并 → streak 归零
+      seedWithStreak(3, [{ id: 1, row: 0, col: 2, value: 2 }])
+      render(<App />)
+      expect(document.querySelector('.combo-meter')).not.toBeNull()
+
+      press('ArrowLeft') // streak → 0
+      // 不立刻消失：仍在，进入停留 / 淡出态
+      const meter = document.querySelector('.combo-meter')
+      expect(meter).not.toBeNull()
+      expect(meter!.classList.contains('combo-leaving')).toBe(true)
+
+      // 停留时间过后才真正卸载
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+      expect(document.querySelector('.combo-meter')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
