@@ -10,7 +10,7 @@
  * 所以每次发布新版本需要同步改 CACHE_VERSION。
  */
 
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2'
 const CACHE_NAME = `react-2048-${CACHE_VERSION}`
 
 /** 预缓存清单。BASE 由构建时注入，兼容部署在子路径（如 GitHub Pages）的情况 */

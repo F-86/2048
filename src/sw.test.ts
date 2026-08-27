@@ -12,6 +12,9 @@ import { resolve } from 'node:path'
 
 const SW_SOURCE = readFileSync(resolve(process.cwd(), 'public/sw.js'), 'utf8')
 
+/** 从源码提取当前缓存版本，避免版本号升级后测试悄悄失效 */
+const CACHE_VERSION = /const CACHE_VERSION = '([^']+)'/.exec(SW_SOURCE)?.[1] ?? ''
+
 const SCOPE = 'https://example.com/2048/'
 
 /** 极简 Cache 假实现，按 URL 字符串存取。fetch 由外部注入，避免真的发网络请求 */
@@ -260,7 +263,7 @@ describe('sw.js — 激活阶段', () => {
 
     expect(env.deleted).toContain('react-2048-v0')
     // 当前版本不应被删
-    const current = [...env.caches.keys()].find((k) => k.endsWith('v1'))
+    const current = [...env.caches.keys()].find((k) => k.endsWith(CACHE_VERSION))
     expect(env.deleted).not.toContain(current)
   })
 
