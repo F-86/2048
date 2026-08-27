@@ -4,15 +4,24 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#faf8ef" />
     <meta name="description" content="网页版 2048 游戏，支持键盘与触摸操作、撤销与音效" />
     <title>2048</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- iOS 添加到主屏幕后以独立窗口运行（Safari 不读 manifest 的 display 字段） -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- 状态栏样式：跟随页面浅色背景 -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="2048" />
+
+    <!-- 路径用相对形式，便于部署到 GitHub Pages 的子路径 -->
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
   </head>
   <body>
     <div id="root"></div>

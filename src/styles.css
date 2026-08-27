@@ -26,7 +26,13 @@
 
 body {
   margin: 0;
-  padding: 24px 16px 40px;
+  /*
+   * 加上 iOS 安全区内边距：添加到主屏幕后以独立窗口运行，
+   * 顶部会被灵动岛/刘海遮挡、底部有 Home 指示条。
+   * env() 在不支持的浏览器里回退为 0，桌面端无影响。
+   */
+  padding: calc(24px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   background: var(--bg);
   color: var(--text);
   font-family: 'Clear Sans', 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB',
@@ -36,6 +42,8 @@ body {
   touch-action: manipulation;
   /* 兜底：任何情况下都不出现横向滚动 */
   overflow-x: hidden;
+  /* 独立窗口下禁止整页上下拖拽产生的橡皮筋效果 */
+  overscroll-behavior-y: contain;
 }
 
 .app {

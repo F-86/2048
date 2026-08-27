@@ -13,12 +13,35 @@ npm run dev     # 启动开发服务器 → http://localhost:5173
 
 | 命令 | 说明 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器（热更新） |
+| `npm run dev` | 启动开发服务器（热更新，同时监听局域网） |
 | `npm run build` | 类型检查 + 生产构建，输出到 `dist/` |
+| `npm run build:pages` | 构建到 `/2048/` 子路径，供 GitHub Pages 部署 |
 | `npm run preview` | 本地预览生产构建产物 |
 | `npm test` | 监听模式运行测试 |
 | `npm run test:run` | 单次运行全部测试 |
 | `npm run typecheck` | 仅做类型检查 |
+
+## 装到手机上
+
+游戏是一个 PWA，可以「添加到主屏幕」当独立 App 使用，并支持离线运行。
+
+**方式一：部署到 GitHub Pages（推荐）**
+
+仓库已带 `.github/workflows/deploy.yml`，推送到 `master` 即自动构建并发布。首次需要在仓库的 Settings → Pages 里把 Source 设为 **GitHub Actions**（或执行 `gh api -X POST repos/<用户名>/2048/pages -f build_type=workflow`）。
+
+发布后用 iPhone 的 **Safari** 打开 `https://<用户名>.github.io/2048/`，点底部分享按钮 → 「添加到主屏幕」。
+
+**方式二：局域网直连（临时试玩）**
+
+`npm run dev` 已监听全部网卡，手机连同一 WiFi 后访问终端里显示的 `Network` 地址即可。这种方式需要电脑一直开着服务。
+
+注意「添加到主屏幕」在 iOS 上**只有 Safari 支持**，Chrome 没有这个选项。
+
+### 离线运行
+
+`public/sw.js` 是一个 Service Worker：首次打开时预缓存全部资源，之后断网也能玩。导航请求走「网络优先、失败回退缓存」，保证有网时能拿到新版本；其余资源走缓存优先。
+
+发布新版本时需要同步递增 `sw.js` 里的 `CACHE_VERSION`，激活时会自动清掉旧缓存。Service Worker 只在生产构建中注册——开发环境下它会缓存旧资源、干扰热更新。
 
 ## 玩法
 
@@ -54,7 +77,9 @@ npm run dev     # 启动开发服务器 → http://localhost:5173
 ## 项目结构
 
 ```
-public/                 图标与 PWA manifest
+.github/workflows/
+└── deploy.yml          推送到 master 时自动部署到 GitHub Pages
+public/                 图标、PWA manifest 与 Service Worker
 scripts/
 └── resize-icon.mjs     纯 Node 实现的 PNG 缩放（生成各尺寸图标用）
 src/
@@ -74,6 +99,7 @@ src/
 │   └── ScoreBoard.tsx  分数面板与得分飘字
 ├── App.tsx             页面组装
 ├── App.test.tsx        组件与交互测试
+├── sw.test.ts          Service Worker 缓存与离线回退测试
 ├── styles.css          全部样式与动画
 └── main.tsx            入口
 ```

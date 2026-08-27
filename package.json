@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:pages": "tsc -b && vite build --mode pages",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest",
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^5.2.0",
