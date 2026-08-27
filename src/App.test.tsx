@@ -552,10 +552,9 @@ describe('App — 棋盘尺寸切换', () => {
     render(<App />)
     const before = visibleValues().length
 
-    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
-      press(key)
-      if (visibleValues().length > before) break
-    }
+    // 预置的两个方块在同一行、不同列，向下必定「只位移不合并」，
+    // 因而稳定新增一个方块（不能用随机方向 + 数量判断：横向会把它们合并，数量不变）
+    press('ArrowDown')
     expect(visibleValues().length).toBeGreaterThan(before)
 
     press('z')
@@ -637,22 +636,41 @@ describe('App — 下一个方块预告', () => {
   })
 
   it('预告的数值就是下一个真正落下的方块', () => {
+    // 用确定性存档：单个方块不在最左列，向左必定「只位移、不合并」，
+    // 因而这一步恰好生成一个新方块，且其值必为预告的 next。
+    // 不能用随机开局 + 「方块数增加」来判断是否移动：若首步是合并，
+    // 数量 2→1→(+1) 仍是 2，循环会继续多按几次，读到的就不是这次预告对应的方块。
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles: [{ id: 1, row: 0, col: 2, value: 2 }],
+          score: 0,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: 2,
+          next: 4,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
     render(<App />)
-    const readNext = () =>
-      Number(screen.getByText('下一个').parentElement!.querySelector('.score-next')!.textContent)
-    const promised = readNext()
+    const promised = Number(
+      screen.getByText('下一个').parentElement!.querySelector('.score-next')!.textContent,
+    )
+    expect(promised).toBe(4)
 
-    const before = visibleValues().length
-    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
-      press(key)
-      if (visibleValues().length > before) break
-    }
+    press('ArrowLeft')
 
-    // 新生成的那一块（带 tile-new）的数值应与之前的预告一致
+    // 唯一带 tile-new 的就是这次生成的方块（原方块移动后会被剥掉 isNew）
     const spawned = Array.from(document.querySelectorAll('.tile-new')).map((el) =>
       Number(el.textContent),
     )
-    expect(spawned).toContain(promised)
+    expect(spawned).toEqual([promised])
   })
 })
 
