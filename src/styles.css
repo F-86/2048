@@ -1,0 +1,463 @@
+:root {
+  /* 棋盘尺寸相关，改这几个变量即可整体缩放 */
+  --size: 4;
+  --gap: 12px;
+  --radius: 6px;
+  --board-max: 460px;
+
+  /* 经典 2048 配色 */
+  --bg: #faf8ef;
+  --text: #776e65;
+  --text-light: #f9f6f2;
+  --board: #bbada0;
+  --cell: rgba(238, 228, 218, 0.35);
+  --btn: #8f7a66;
+  --btn-hover: #9f8b77;
+
+  --move-duration: 110ms;
+  --pop-duration: 190ms;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px 16px 40px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Clear Sans', 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* 避免移动端双击缩放干扰滑动 */
+  touch-action: manipulation;
+  /* 兜底：任何情况下都不出现横向滚动 */
+  overflow-x: hidden;
+}
+
+.app {
+  /* 同时受视口与最大宽度限制，避免窄屏下内容溢出 */
+  width: 100%;
+  max-width: var(--board-max);
+  margin: 0 auto;
+}
+
+/* ---------- 顶部 ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(40px, 11vw, 68px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -2px;
+  /* 允许标题在极窄屏被压缩，而不是把分数面板挤出视口 */
+  min-width: 0;
+}
+
+.scores {
+  display: flex;
+  gap: 8px;
+  /* 分数面板优先保留完整宽度 */
+  flex: 0 0 auto;
+}
+
+.score-box {
+  position: relative;
+  min-width: 76px;
+  padding: 7px 12px 9px;
+  border-radius: var(--radius);
+  background: var(--board);
+  text-align: center;
+}
+
+.score-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #eee4da;
+  text-transform: uppercase;
+}
+
+.score-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 得分增量飘字 */
+.score-gain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  color: rgba(119, 110, 101, 0.9);
+  pointer-events: none;
+  animation: score-float 600ms ease-in both;
+}
+
+@keyframes score-float {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+}
+
+/* ---------- 工具栏 ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0 14px;
+  flex-wrap: wrap;
+}
+
+.hint {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 260px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 9px 16px;
+  border: none;
+  border-radius: var(--radius);
+  background: #d6cdc4;
+  color: #776e65;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: #c9bfb5;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--btn);
+  color: var(--text-light);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--btn-hover);
+}
+
+.btn:focus-visible {
+  outline: 3px solid rgba(143, 122, 102, 0.5);
+  outline-offset: 2px;
+}
+
+/* ---------- 棋盘 ---------- */
+
+.board {
+  position: relative;
+  padding: var(--gap);
+  border-radius: var(--radius);
+  background: var(--board);
+  /* 正方形棋盘，随宽度自适应 */
+  aspect-ratio: 1;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.grid-bg,
+.tiles {
+  position: absolute;
+  inset: var(--gap);
+}
+
+.grid-bg {
+  display: grid;
+  grid-template-columns: repeat(var(--size), 1fr);
+  grid-template-rows: repeat(var(--size), 1fr);
+  gap: var(--gap);
+}
+
+.grid-cell {
+  border-radius: var(--radius);
+  background: var(--cell);
+}
+
+/* ---------- 方块 ---------- */
+
+.tile {
+  /*
+   * 每格边长 = (棋盘内宽 - 3 个间隙) / 4
+   * 用 CSS 变量算出偏移，位置变化时靠 transition 产生滑动动画
+   */
+  --cell-size: calc((100% - (var(--size) - 1) * var(--gap)) / var(--size));
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* DOM 顺序按 id 固定，层叠顺序显式由 z-index 决定 */
+  z-index: 1;
+  width: var(--cell-size);
+  height: var(--cell-size);
+  transform: translate(
+    calc(var(--col) * (100% + var(--gap))),
+    calc(var(--row) * (100% + var(--gap)))
+  );
+  transition: transform var(--move-duration) ease-in-out;
+  will-change: transform;
+}
+
+.tile-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+  background: #eee4da;
+  color: var(--text);
+  font-size: clamp(24px, 8.5cqw, 44px);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiles {
+  container-type: size;
+}
+
+/* 数字越多字号越小，避免溢出格子 */
+.tile-digits-3 .tile-inner {
+  font-size: clamp(20px, 7cqw, 36px);
+}
+.tile-digits-4 .tile-inner {
+  font-size: clamp(16px, 5.6cqw, 30px);
+}
+.tile-digits-5 .tile-inner {
+  font-size: clamp(13px, 4.6cqw, 24px);
+}
+
+/* 各数值配色 */
+.tile-2 .tile-inner {
+  background: #eee4da;
+}
+.tile-4 .tile-inner {
+  background: #ede0c8;
+}
+.tile-8 .tile-inner {
+  background: #f2b179;
+  color: var(--text-light);
+}
+.tile-16 .tile-inner {
+  background: #f59563;
+  color: var(--text-light);
+}
+.tile-32 .tile-inner {
+  background: #f67c5f;
+  color: var(--text-light);
+}
+.tile-64 .tile-inner {
+  background: #f65e3b;
+  color: var(--text-light);
+}
+.tile-128 .tile-inner {
+  background: #edcf72;
+  color: var(--text-light);
+  box-shadow: 0 0 20px 6px rgba(243, 215, 116, 0.24);
+}
+.tile-256 .tile-inner {
+  background: #edcc61;
+  color: var(--text-light);
+  box-shadow: 0 0 22px 8px rgba(243, 215, 116, 0.3);
+}
+.tile-512 .tile-inner {
+  background: #edc850;
+  color: var(--text-light);
+  box-shadow: 0 0 24px 10px rgba(243, 215, 116, 0.36);
+}
+.tile-1024 .tile-inner {
+  background: #edc53f;
+  color: var(--text-light);
+  box-shadow: 0 0 26px 11px rgba(243, 215, 116, 0.42);
+}
+.tile-2048 .tile-inner {
+  background: #edc22e;
+  color: var(--text-light);
+  box-shadow: 0 0 28px 12px rgba(243, 215, 116, 0.48);
+}
+/* 超过 2048 统一用深色 */
+.tile-super .tile-inner {
+  background: #3c3a32;
+  color: var(--text-light);
+}
+
+/* 新生成的方块：淡入放大 */
+.tile-new .tile-inner {
+  animation: tile-appear var(--pop-duration) ease-out both;
+}
+
+@keyframes tile-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 合并产生的方块：先滑到位，再弹一下 */
+.tile-merged .tile-inner {
+  animation: tile-pop var(--pop-duration) var(--move-duration) ease-in-out both;
+}
+
+@keyframes tile-pop {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 被吞掉的方块：滑到目标格后隐藏，让合并后的方块顶上来 */
+.tile-ghost {
+  z-index: 0;
+}
+
+.tile-ghost .tile-inner {
+  animation: tile-vanish 1ms var(--move-duration) linear both;
+}
+
+@keyframes tile-vanish {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- 遮罩 ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius);
+  text-align: center;
+  animation: overlay-in 380ms ease-in both;
+}
+
+.overlay-over {
+  background: rgba(238, 228, 218, 0.73);
+}
+
+.overlay-win {
+  background: rgba(237, 194, 46, 0.5);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.overlay-title {
+  margin: 0;
+  font-size: clamp(32px, 10vw, 52px);
+  font-weight: 800;
+  color: var(--text);
+}
+
+.overlay-win .overlay-title {
+  color: var(--text-light);
+  text-shadow: 0 2px 8px rgba(119, 110, 101, 0.4);
+}
+
+.overlay-sub {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.overlay-win .overlay-sub {
+  color: var(--text-light);
+}
+
+.overlay-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ---------- 底部 ---------- */
+
+.footer {
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(119, 110, 101, 0.75);
+  text-align: center;
+}
+
+/* 小屏适配：收紧间距 */
+@media (max-width: 420px) {
+  :root {
+    --gap: 9px;
+  }
+
+  .hint {
+    max-width: none;
+    order: 3;
+  }
+}
+
+/* 尊重系统的减少动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .tile-inner,
+  .overlay,
+  .score-gain {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
