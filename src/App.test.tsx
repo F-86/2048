@@ -244,6 +244,60 @@ describe('App — 触摸滑动', () => {
   })
 })
 
+describe('App — 音效开关', () => {
+  /** 静音按钮是工具栏第一个按钮，用 aria-label 定位 */
+  const muteBtn = () => screen.getByRole('button', { name: /音效/ })
+
+  it('默认开启音效，按钮显示为未静音', () => {
+    render(<App />)
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('false')
+    expect(muteBtn().textContent).toBe('🔊')
+  })
+
+  it('点击切换静音状态', () => {
+    render(<App />)
+    act(() => {
+      fireEvent.click(muteBtn())
+    })
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('true')
+    expect(muteBtn().textContent).toBe('🔇')
+
+    act(() => {
+      fireEvent.click(muteBtn())
+    })
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('按 M 键切换静音', () => {
+    render(<App />)
+    press('m')
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('true')
+    press('M')
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('静音偏好在刷新后保留', () => {
+    const { unmount } = render(<App />)
+    act(() => {
+      fireEvent.click(muteBtn())
+    })
+    unmount()
+
+    render(<App />)
+    expect(muteBtn().getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('移动时不会因音效抛错（jsdom 无 AudioContext，应静默降级）', () => {
+    render(<App />)
+    const before = visibleValues().length
+    // 若音效代码未做降级处理，这里会抛异常
+    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
+      press(key)
+    }
+    expect(visibleValues().length).toBeGreaterThanOrEqual(before)
+  })
+})
+
 describe('App — 方块定位', () => {
   it('每个方块都带有行列 CSS 变量，用于 transform 定位', () => {
     render(<App />)

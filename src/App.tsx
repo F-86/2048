@@ -5,8 +5,9 @@ import { useInput } from './game/useInput'
 import './styles.css'
 
 export default function App() {
-  const { core, best, gain, canUndo, move, undo, restart, keepPlaying } = useGame()
-  useInput(move, undo)
+  const { core, best, gain, canUndo, muted, move, undo, restart, keepPlaying, toggleMute } =
+    useGame()
+  useInput(move, undo, toggleMute)
 
   return (
     <div className="app">
@@ -20,6 +21,15 @@ export default function App() {
           用<strong>方向键</strong>或<strong>滑动</strong>合并相同数字，凑出 <strong>2048</strong>
         </p>
         <div className="toolbar-actions">
+          <button
+            className="btn btn-icon"
+            onClick={toggleMute}
+            title={muted ? '开启音效' : '关闭音效'}
+            aria-label={muted ? '开启音效' : '关闭音效'}
+            aria-pressed={muted}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
           <button className="btn" onClick={undo} disabled={!canUndo} title="撤销上一步（Z）">
             撤销
           </button>
@@ -32,7 +42,7 @@ export default function App() {
       <Board core={core} onRestart={restart} onKeepPlaying={keepPlaying} />
 
       <footer className="footer">
-        方向键 / WASD / HJKL 移动 · Z 撤销 · 手机在棋盘上滑动
+        方向键 / WASD / HJKL 移动 · Z 撤销 · M 静音 · 手机在棋盘上滑动
       </footer>
     </div>
   )

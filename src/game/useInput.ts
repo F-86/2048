@@ -22,7 +22,11 @@ const KEY_MAP: Record<string, Direction> = {
 const SWIPE_THRESHOLD = 24
 
 /** 绑定键盘方向键与触摸滑动，转换成移动指令 */
-export function useInput(onMove: (dir: Direction) => void, onUndo: () => void) {
+export function useInput(
+  onMove: (dir: Direction) => void,
+  onUndo: () => void,
+  onToggleMute?: () => void,
+) {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // 让浏览器保留组合键（如 ⌘R 刷新）
@@ -31,6 +35,12 @@ export function useInput(onMove: (dir: Direction) => void, onUndo: () => void) {
       if (e.key === 'z' || e.key === 'Z') {
         e.preventDefault()
         onUndo()
+        return
+      }
+
+      if (onToggleMute && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault()
+        onToggleMute()
         return
       }
 
@@ -44,7 +54,7 @@ export function useInput(onMove: (dir: Direction) => void, onUndo: () => void) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onMove, onUndo])
+  }, [onMove, onUndo, onToggleMute])
 
   useEffect(() => {
     let startX = 0

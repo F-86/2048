@@ -174,6 +174,13 @@ body {
   background: var(--btn-hover);
 }
 
+/* 图标按钮（静音开关）：正方形，只放一个 emoji */
+.btn-icon {
+  padding: 9px 11px;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .btn:focus-visible {
   outline: 3px solid rgba(143, 122, 102, 0.5);
   outline-offset: 2px;

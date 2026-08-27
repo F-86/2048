@@ -30,20 +30,38 @@ npm run dev     # 启动开发服务器 → http://localhost:5173
 | --- | --- |
 | 移动 | 方向键 / `WASD` / `HJKL` |
 | 撤销 | `Z` 或「撤销」按钮（最多回退 20 步） |
+| 静音 | `M` 或 🔊 按钮 |
 | 重开 | 「新游戏」按钮 |
 | 移动端 | 在棋盘上滑动 |
 
-对局进度与最高分会自动保存在浏览器 `localStorage`，关闭页面后仍可继续。
+对局进度、最高分与静音偏好会自动保存在浏览器 `localStorage`，关闭页面后仍可继续。
+
+## 音效
+
+所有音效用 Web Audio 实时合成，不加载任何音频文件（零体积、无版权问题）。风格偏克制轻柔：音量压低、衰减快，长时间游戏不吵。
+
+合并音的音高随合成的数字升高，走五声音阶以保证任意组合都不刺耳：
+
+| 数字 | 4 | 16 | 64 | 256 | 1024 | 2048 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 音高 | C4 | E4 | A4 | D5 | G5 | A5 |
+
+此外滑动、撤销、新游戏、胜利、失败各有对应音效。首次交互后才会创建 `AudioContext`（遵循浏览器自动播放策略）；环境不支持 Web Audio 时静默降级为无声，不影响游戏。
 
 ## 项目结构
 
 ```
+public/                 图标与 PWA manifest
+scripts/
+└── resize-icon.mjs     纯 Node 实现的 PNG 缩放（生成各尺寸图标用）
 src/
 ├── game/
 │   ├── types.ts        游戏类型定义与常量
 │   ├── engine.ts       核心逻辑：移动、合并、生成、胜负判定（纯函数）
 │   ├── engine.test.ts  引擎单元测试
-│   ├── useGame.ts      React 状态管理：撤销栈、localStorage 持久化
+│   ├── sfx.ts          Web Audio 音效合成
+│   ├── sfx.test.ts     音效测试
+│   ├── useGame.ts      React 状态管理：撤销栈、localStorage 持久化、音效触发
 │   └── useInput.ts     键盘与触摸滑动输入
 ├── components/
 │   ├── Board.tsx       棋盘与胜负遮罩
@@ -65,10 +83,12 @@ src/
 
 **方块按 id 排序渲染。** 保证 DOM 顺序稳定，避免 React 重排节点时打断正在进行的 CSS transition；层叠关系交给 `z-index` 控制。
 
+**reducer 保持纯函数。** 随机数在 reducer 外取好经 action 传入，音效也不在 reducer 内播放——reducer 只在 state 里记录「该播什么音」的描述符，由 effect 消费。这样 StrictMode 下 reducer 被重复执行时结果一致，也不会重复发声。
+
 ## 测试
 
 ```bash
 npm run test:run
 ```
 
-覆盖两个层面：`engine.test.ts` 验证游戏规则与不变量（含随机对局的模糊测试，检查坐标不越界、无重叠方块、分数自洽、数值均为 2 的幂）；`App.test.tsx` 在 jsdom 中渲染真实组件，验证键盘操作、撤销、重开、localStorage 持久化以及存档损坏时的回退。
+覆盖三个层面：`engine.test.ts` 验证游戏规则与不变量（含随机对局的模糊测试，检查坐标不越界、无重叠方块、分数自洽、数值均为 2 的幂）；`sfx.test.ts` 用假的 `AudioContext` 验证音效确实创建了振荡器、音高单调递增、包络有淡入淡出、静音真的归零，以及无 Web Audio 时的降级；`App.test.tsx` 在 jsdom 中渲染真实组件，验证键盘操作、触摸滑动、撤销、重开、静音开关以及 localStorage 持久化与存档损坏时的回退。
