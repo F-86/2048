@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
 
@@ -811,5 +812,70 @@ describe('App — 局后复盘', () => {
     render(<App />)
     const item = screen.getByText('最大方块').parentElement!
     expect(Number(item.querySelector('.recap-value')!.textContent)).toBe(4)
+  })
+})
+
+describe('App — StrictMode 下不重复计分', () => {
+  /** 摆一个「一次左移合并两对」的局面（与连锁测试同构，但自带 seed 便于独立运行） */
+  function seedTwoPairs() {
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles: [
+            { id: 1, row: 0, col: 0, value: 2 },
+            { id: 2, row: 0, col: 1, value: 2 },
+            { id: 3, row: 1, col: 0, value: 4 },
+            { id: 4, row: 1, col: 1, value: 4 },
+          ],
+          score: 0,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: 5,
+          next: 2,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  // main.tsx 把 <App/> 包在 <StrictMode> 里，dev 下 reducer 会被重复执行一次。
+  // 这里复刻那个环境，确认一次按键只计一次分（+18），而不是把连锁重复算成 +36/+44。
+  it('包在 StrictMode 里，一次按键只合并一次、只计一次分', () => {
+    seedTwoPairs()
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    // 落位后棋盘上活方块数：两对各合成 1 个 + 1 个新生成 = 3
+    press('ArrowLeft')
+
+    // 基础分 4+8=12，两对连锁 ×1.5 → 18；若 reducer 非幂等被重复应用会变成 36 左右
+    expect(scoreValue()).toBe(18)
+    expect(document.querySelector('.score-mult')!.textContent).toBe('×1.5')
+    // streak 应为 1（本局第一次合并），倍率里不含连击加成
+    expect(visibleValues().filter((v) => v === 4 || v === 8).length).toBeGreaterThan(0)
+  })
+
+  it('StrictMode 下连续两次按键，分数逐步累加而非翻倍', () => {
+    seedTwoPairs()
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+    press('ArrowLeft')
+    const afterFirst = scoreValue()
+    expect(afterFirst).toBe(18)
+
+    // 再按一次；无论是否还能合并，分数都不该出现「凭空翻倍」
+    press('ArrowDown')
+    expect(scoreValue()).toBeGreaterThanOrEqual(afterFirst)
+    expect(scoreValue()).toBeLessThan(afterFirst * 2)
   })
 })
