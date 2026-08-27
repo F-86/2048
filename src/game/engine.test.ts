@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createGame, emptyCells, hasMoves, move, spawnTile } from './engine'
-import { SIZE, type Core, type Tile } from './types'
+import type { BoardSize, Core, Tile } from './types'
 
-/** 用 4x4 数字矩阵构造一个棋盘状态，0 表示空格 */
+/**
+ * 用数字矩阵构造一个棋盘状态，0 表示空格。
+ * 尺寸由矩阵的实际维度推断，因此同一个辅助函数可同时服务 4×4 与 5×5。
+ */
 function fromMatrix(matrix: number[][], overrides: Partial<Core> = {}): Core {
   const tiles: Tile[] = []
   let nextId = 1
@@ -12,6 +15,7 @@ function fromMatrix(matrix: number[][], overrides: Partial<Core> = {}): Core {
     }),
   )
   return {
+    size: matrix.length as BoardSize,
     tiles,
     score: 0,
     won: false,
@@ -24,7 +28,9 @@ function fromMatrix(matrix: number[][], overrides: Partial<Core> = {}): Core {
 
 /** 把状态还原成矩阵，忽略残影，便于断言 */
 function toMatrix(core: Core): number[][] {
-  const m = Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => 0))
+  const m = Array.from({ length: core.size }, () =>
+    Array.from({ length: core.size }, () => 0),
+  )
   for (const t of core.tiles) {
     if (!t.isGhost) m[t.row][t.col] = t.value
   }
@@ -176,7 +182,7 @@ describe('move — 合并规则', () => {
 
 describe('新方块生成', () => {
   it('开局有两个方块，数值为 2 或 4', () => {
-    const core = createGame(seededRng([0.1, 0.5, 0.7, 0.95]))
+    const core = createGame(4, seededRng([0.1, 0.5, 0.7, 0.95]))
     expect(core.tiles.length).toBe(2)
     for (const t of core.tiles) expect([2, 4]).toContain(t.value)
   })
@@ -212,8 +218,8 @@ describe('新方块生成', () => {
       [2, 4, 2, 4],
       [4, 2, 4, 2],
     ])
-    expect(emptyCells(full.tiles).length).toBe(0)
-    expect(spawnTile(full, lastCellRng).tiles.length).toBe(16)
+    expect(emptyCells(full).length).toBe(0)
+    expect(spawnTile(full, lastCellRng).tiles.length).toBe(full.size * full.size)
   })
 })
 
@@ -237,11 +243,11 @@ describe('胜负判定', () => {
       [4, 2, 4, 2],
       [4, 0, 2, 4],
     ])
-    expect(hasMoves(stuck.tiles)).toBe(true)
+    expect(hasMoves(stuck)).toBe(true)
     // rng 全 0 → 落在第一个空格 (3,0) 且值为 2
     const { core: next, moved } = move(stuck, 'right', seededRng([0, 0]))
     expect(moved).toBe(true)
-    expect(emptyCells(next.tiles).length).toBe(0)
+    expect(emptyCells(next).length).toBe(0)
     expect(next.over).toBe(true)
   })
 
@@ -252,7 +258,7 @@ describe('胜负判定', () => {
       [2, 4, 2, 4],
       [4, 2, 4, 0],
     ])
-    expect(hasMoves(core.tiles)).toBe(true)
+    expect(hasMoves(core)).toBe(true)
   })
 
   it('满盘但有相邻相同数字时未结束', () => {
@@ -262,49 +268,199 @@ describe('胜负判定', () => {
       [8, 16, 32, 64],
       [16, 32, 64, 128],
     ])
-    expect(hasMoves(core.tiles)).toBe(true)
+    expect(hasMoves(core)).toBe(true)
+  })
+})
+
+describe('5×5 棋盘', () => {
+  it('向左把方块挤过全部 5 列', () => {
+    const core = fromMatrix([
+      [0, 0, 0, 0, 2],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    expect(core.size).toBe(5)
+    const { core: next, moved } = move(core, 'left', lastCellRng)
+    expect(moved).toBe(true)
+    expect(toMatrix(next)[0][0]).toBe(2)
+  })
+
+  it('向下把方块挤到第 5 行', () => {
+    const core = fromMatrix([
+      [2, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    const { core: next } = move(core, 'down', lastCellRng)
+    expect(toMatrix(next)[4][0]).toBe(2)
+  })
+
+  it('奇数宽度：一行 5 个相同数字合并成两对加一个余数', () => {
+    // 这是 4×4 没有的情形，能暴露奇数宽度下的差一错误
+    const core = fromMatrix([
+      [2, 2, 2, 2, 2],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    const { core: next, gained } = move(core, 'left', lastCellRng)
+    const row = toMatrix(next)[0]
+    expect(row[0]).toBe(4)
+    expect(row[1]).toBe(4)
+    expect(row[2]).toBe(2)
+    expect(gained).toBe(8)
+  })
+
+  it('向右时 5 个相同数字优先合并靠右的两对', () => {
+    const core = fromMatrix([
+      [2, 2, 2, 2, 2],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    const { core: next } = move(core, 'right', lastCellRng)
+    const row = toMatrix(next)[0]
+    expect(row[4]).toBe(4)
+    expect(row[3]).toBe(4)
+    expect(row[2]).toBe(2)
+  })
+
+  it('createGame(5) 得到 5×5 棋盘与两个方块', () => {
+    const core = createGame(5, seededRng([0.2, 0.5, 0.8, 0.3]))
+    expect(core.size).toBe(5)
+    expect(core.tiles.length).toBe(2)
+    for (const t of core.tiles) {
+      expect(t.row).toBeLessThan(5)
+      expect(t.col).toBeLessThan(5)
+    }
+  })
+
+  it('满盘时空格为 0 且不再生成新方块', () => {
+    const full = fromMatrix([
+      [2, 4, 2, 4, 2],
+      [4, 2, 4, 2, 4],
+      [2, 4, 2, 4, 2],
+      [4, 2, 4, 2, 4],
+      [2, 4, 2, 4, 2],
+    ])
+    expect(emptyCells(full).length).toBe(0)
+    expect(spawnTile(full, lastCellRng).tiles.length).toBe(25)
+  })
+
+  it('5×5 也在合成 2048 时判定胜利（目标不随尺寸改变）', () => {
+    const core = fromMatrix([
+      [1024, 1024, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    const { core: next } = move(core, 'left', lastCellRng)
+    expect(next.won).toBe(true)
+    expect(toMatrix(next)[0][0]).toBe(2048)
+  })
+
+  it('满盘且无相邻相同数字时判定结束', () => {
+    // 每行错位排列 5 个互不相同的数字，保证横竖都没有相邻相同项
+    const stuck = fromMatrix([
+      [2, 4, 8, 16, 32],
+      [4, 8, 16, 32, 2],
+      [8, 16, 32, 2, 4],
+      [16, 32, 2, 4, 8],
+      [32, 2, 4, 8, 16],
+    ])
+    expect(emptyCells(stuck).length).toBe(0)
+    expect(hasMoves(stuck)).toBe(false)
+  })
+
+  it('满盘但有相邻相同数字时未结束', () => {
+    const core = fromMatrix([
+      [2, 2, 8, 16, 32],
+      [4, 8, 16, 32, 2],
+      [8, 16, 32, 2, 4],
+      [16, 32, 2, 4, 8],
+      [32, 2, 4, 8, 16],
+    ])
+    expect(hasMoves(core)).toBe(true)
+  })
+
+  it('合并后的残影停在目标格，下一回合被清除', () => {
+    const core = fromMatrix([
+      [2, 0, 0, 0, 2],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0],
+    ])
+    const first = move(core, 'left', lastCellRng).core
+    const merged = first.tiles.find((t) => t.isMerged)
+    const ghost = first.tiles.find((t) => t.isGhost)
+    expect(merged?.value).toBe(4)
+    expect(ghost!.row).toBe(merged!.row)
+    expect(ghost!.col).toBe(merged!.col)
+
+    const second = move(first, 'down', lastCellRng).core
+    expect(second.tiles.some((t) => t.isGhost)).toBe(false)
+  })
+
+  it('移动保持 size 不变', () => {
+    let core = createGame(5, seededRng([0.4, 0.6, 0.15, 0.85]))
+    for (const dir of ['left', 'up', 'right', 'down'] as const) {
+      core = move(core, dir, seededRng([0.3, 0.7])).core
+      expect(core.size).toBe(5)
+    }
   })
 })
 
 describe('不变量', () => {
-  it('随机对局中方块数与分数始终自洽', () => {
-    const rng = seededRng([0.13, 0.42, 0.77, 0.05, 0.91, 0.36, 0.68, 0.24])
-    let core = createGame(rng)
-    const dirs = ['left', 'up', 'right', 'down'] as const
-    let expectedScore = 0
+  // 两种尺寸都跑一遍，确保尺寸参数化没有引入坐标越界或重叠
+  for (const size of [4, 5] as const) {
+    it(`${size}×${size} 随机对局中方块数与分数始终自洽`, () => {
+      const rng = seededRng([0.13, 0.42, 0.77, 0.05, 0.91, 0.36, 0.68, 0.24])
+      let core = createGame(size, rng)
+      const dirs = ['left', 'up', 'right', 'down'] as const
+      let expectedScore = 0
 
-    for (let i = 0; i < 200; i++) {
-      const { core: next, gained, moved } = move(core, dirs[i % 4], rng)
-      if (moved) expectedScore += gained
-      core = next
-      const alive = core.tiles.filter((t) => !t.isGhost)
-      expect(alive.length).toBeLessThanOrEqual(SIZE * SIZE)
-      // 坐标不越界，且没有两个活方块占同一格
-      const seen = new Set<string>()
-      for (const t of alive) {
-        expect(t.row).toBeGreaterThanOrEqual(0)
-        expect(t.row).toBeLessThan(SIZE)
-        expect(t.col).toBeGreaterThanOrEqual(0)
-        expect(t.col).toBeLessThan(SIZE)
-        const key = `${t.row},${t.col}`
-        expect(seen.has(key)).toBe(false)
-        seen.add(key)
+      for (let i = 0; i < 200; i++) {
+        const { core: next, gained, moved } = move(core, dirs[i % 4], rng)
+        if (moved) expectedScore += gained
+        core = next
+        expect(core.size).toBe(size)
+        const alive = core.tiles.filter((t) => !t.isGhost)
+        expect(alive.length).toBeLessThanOrEqual(size * size)
+        // 坐标不越界，且没有两个活方块占同一格
+        const seen = new Set<string>()
+        for (const t of alive) {
+          expect(t.row).toBeGreaterThanOrEqual(0)
+          expect(t.row).toBeLessThan(size)
+          expect(t.col).toBeGreaterThanOrEqual(0)
+          expect(t.col).toBeLessThan(size)
+          const key = `${t.row},${t.col}`
+          expect(seen.has(key)).toBe(false)
+          seen.add(key)
+        }
+        expect(core.score).toBe(expectedScore)
+        if (core.over) break
       }
-      expect(core.score).toBe(expectedScore)
-      if (core.over) break
-    }
-  })
+    })
 
-  it('所有方块数值都是 2 的幂', () => {
-    const rng = seededRng([0.31, 0.66, 0.08, 0.95, 0.52, 0.19])
-    let core = createGame(rng)
-    const dirs = ['up', 'right', 'down', 'left'] as const
-    for (let i = 0; i < 150 && !core.over; i++) {
-      core = move(core, dirs[i % 4], rng).core
-      for (const t of core.tiles) {
-        expect(Number.isInteger(Math.log2(t.value))).toBe(true)
-        expect(t.value).toBeGreaterThanOrEqual(2)
+    it(`${size}×${size} 所有方块数值都是 2 的幂`, () => {
+      const rng = seededRng([0.31, 0.66, 0.08, 0.95, 0.52, 0.19])
+      let core = createGame(size, rng)
+      const dirs = ['up', 'right', 'down', 'left'] as const
+      for (let i = 0; i < 150 && !core.over; i++) {
+        core = move(core, dirs[i % 4], rng).core
+        for (const t of core.tiles) {
+          expect(Number.isInteger(Math.log2(t.value))).toBe(true)
+          expect(t.value).toBeGreaterThanOrEqual(2)
+        }
       }
-    }
-  })
+    })
+  }
 })

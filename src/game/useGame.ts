@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { createGame, move as applyMove } from './engine'
 import { applyMuted, loadMuted, saveMuted, sfx } from './sfx'
-import type { Core, Direction, Rng } from './types'
+import {
+  loadBest,
+  loadSaved,
+  loadSize,
+  saveBest,
+  saveGame,
+  saveSize,
+  type Saved,
+} from './storage'
+import type { BoardSize, Core, Direction, Rng } from './types'
 
-const STORAGE_KEY = 'react-2048/state-v1'
-const BEST_KEY = 'react-2048/best-v1'
 /** 撤销栈上限，避免存档无限增长 */
 const MAX_HISTORY = 20
 
@@ -41,6 +48,11 @@ type Action =
   | { type: 'undo' }
   | { type: 'restart'; core: Core }
   | { type: 'keepPlaying' }
+  /**
+   * 切换棋盘尺寸。存档与最高分由调用方在 dispatch 前读好传入，
+   * 以保持 reducer 纯净（与 rand 的处理方式一致）。
+   */
+  | { type: 'setSize'; core: Core; history: Core[]; best: number }
 
 /** 用预先取好的随机数序列构造 rng，让 reducer 可预测、可重放 */
 function seqRng(values: number[]): Rng {
@@ -106,48 +118,50 @@ function reducer(state: GameState, action: Action): GameState {
       }
     }
 
+    case 'setSize': {
+      const soundSeq = state.soundSeq + 1
+      // 整体换成目标尺寸的存档：撤销栈绝不能跨尺寸，
+      // 否则 undo 出来的 core 会与 tiles 尺寸不符
+      return {
+        ...state,
+        core: action.core,
+        history: action.history,
+        best: action.best,
+        gain: null,
+        sound: { kind: 'restart', seq: soundSeq },
+        soundSeq,
+      }
+    }
+
     case 'keepPlaying':
       return { ...state, core: { ...state.core, keepPlaying: true }, sound: null }
   }
 }
 
-function loadBest(): number {
-  try {
-    const raw = localStorage.getItem(BEST_KEY)
-    const n = raw === null ? 0 : Number(raw)
-    return Number.isFinite(n) && n >= 0 ? n : 0
-  } catch {
-    return 0
+/** 读取指定尺寸的存档，缺失或损坏时开新局 */
+function loadForSize(size: BoardSize): { core: Core; history: Core[]; best: number } {
+  const saved: Saved | null = loadSaved(size)
+  const best = loadBest(size)
+  if (saved) {
+    return {
+      core: saved.core,
+      history: saved.history,
+      best: Math.max(best, saved.core.score),
+    }
   }
+  return { core: createGame(size), history: [], best }
 }
 
-/** 读取存档；数据缺失或损坏时回退到新对局 */
+/** 惰性初始化：按最后使用的尺寸载入 */
 function loadInitial(): GameState {
-  const best = loadBest()
-  const base = { gain: null, gainSeq: 0, sound: null, soundSeq: 0 }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as { core?: Core; history?: Core[] }
-      const core = parsed.core
-      if (core && Array.isArray(core.tiles) && typeof core.score === 'number') {
-        return {
-          core,
-          history: Array.isArray(parsed.history) ? parsed.history : [],
-          best: Math.max(best, core.score),
-          ...base,
-        }
-      }
-    }
-  } catch {
-    // 忽略损坏的存档
-  }
-  return { core: createGame(), history: [], best, ...base }
+  const { core, history, best } = loadForSize(loadSize())
+  return { core, history, best, gain: null, gainSeq: 0, sound: null, soundSeq: 0 }
 }
 
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, undefined, loadInitial)
   const { core, history, best, gain, sound } = state
+  const size = core.size
 
   const [muted, setMuted] = useState(loadMuted)
 
@@ -186,23 +200,24 @@ export function useGame() {
     prevOver.current = core.over
   }, [core.won, core.over])
 
-  // 持久化对局
+  // 持久化对局（按尺寸分别存）
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ core, history }))
-    } catch {
-      // 隐私模式下 localStorage 可能不可写，忽略
-    }
-  }, [core, history])
+    saveGame(size, { core, history })
+  }, [size, core, history])
 
-  // 持久化最高分
+  // 持久化最高分（按尺寸分别存）
   useEffect(() => {
-    try {
-      localStorage.setItem(BEST_KEY, String(best))
-    } catch {
-      // 同上
-    }
-  }, [best])
+    saveBest(size, best)
+  }, [size, best])
+
+  // 记住最后使用的尺寸，刷新后恢复
+  useEffect(() => {
+    saveSize(size)
+  }, [size])
+
+  // 供 restart / setSize 读取当前尺寸，避免把 size 放进依赖导致回调频繁重建
+  const sizeRef = useRef(size)
+  sizeRef.current = size
 
   const move = useCallback((dir: Direction) => {
     // 随机数在 reducer 外取，reducer 保持纯函数（StrictMode 重复执行结果一致）
@@ -210,15 +225,29 @@ export function useGame() {
   }, [])
 
   const undo = useCallback(() => dispatch({ type: 'undo' }), [])
-  const restart = useCallback(() => dispatch({ type: 'restart', core: createGame() }), [])
   const keepPlaying = useCallback(() => dispatch({ type: 'keepPlaying' }), [])
   const toggleMute = useCallback(() => setMuted((m) => !m), [])
+
+  const restart = useCallback(() => {
+    dispatch({ type: 'restart', core: createGame(sizeRef.current) })
+  }, [])
+
+  /**
+   * 切换棋盘尺寸：载入目标尺寸自己的存档，接着上次那局继续。
+   * 读存档这一步在 dispatch 之前完成，reducer 保持纯净。
+   */
+  const setSize = useCallback((next: BoardSize) => {
+    if (next === sizeRef.current) return
+    const loaded = loadForSize(next)
+    dispatch({ type: 'setSize', ...loaded })
+  }, [])
 
   const canUndo = history.length > 0
 
   return useMemo(
     () => ({
       core,
+      size,
       best,
       gain,
       canUndo,
@@ -228,7 +257,21 @@ export function useGame() {
       restart,
       keepPlaying,
       toggleMute,
+      setSize,
     }),
-    [core, best, gain, canUndo, muted, move, undo, restart, keepPlaying, toggleMute],
+    [
+      core,
+      size,
+      best,
+      gain,
+      canUndo,
+      muted,
+      move,
+      undo,
+      restart,
+      keepPlaying,
+      toggleMute,
+      setSize,
+    ],
   )
 }

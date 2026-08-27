@@ -1,6 +1,6 @@
 import {
-  SIZE,
   WIN_VALUE,
+  type BoardSize,
   type Core,
   type Direction,
   type Position,
@@ -17,28 +17,28 @@ export interface MoveResult {
   gained: number
 }
 
-const inBounds = (n: number) => n >= 0 && n < SIZE
+const inBounds = (n: number, size: number) => n >= 0 && n < size
 
 /**
  * 返回某条「线」上从墙壁向内的格子顺序。
- * 例如向左移动时，第 index 行的格子顺序为 col 0→3，
+ * 例如向左移动时，第 index 行的格子顺序为 col 0→size-1，
  * 这样先处理的方块会先靠墙，天然实现了正确的挤压顺序。
  */
-function lineCells(dir: Direction, index: number): Position[] {
+function lineCells(dir: Direction, index: number, size: number): Position[] {
   const cells: Position[] = []
-  for (let i = 0; i < SIZE; i++) {
+  for (let i = 0; i < size; i++) {
     switch (dir) {
       case 'left':
         cells.push({ row: index, col: i })
         break
       case 'right':
-        cells.push({ row: index, col: SIZE - 1 - i })
+        cells.push({ row: index, col: size - 1 - i })
         break
       case 'up':
         cells.push({ row: i, col: index })
         break
       case 'down':
-        cells.push({ row: SIZE - 1 - i, col: index })
+        cells.push({ row: size - 1 - i, col: index })
         break
     }
   }
@@ -46,9 +46,9 @@ function lineCells(dir: Direction, index: number): Position[] {
 }
 
 /** 把方块按坐标放进二维索引，便于 O(1) 查询。忽略 ghost（它们只是残影） */
-function toGrid(tiles: Tile[]): (Tile | undefined)[][] {
-  const grid: (Tile | undefined)[][] = Array.from({ length: SIZE }, () =>
-    Array.from({ length: SIZE }, () => undefined),
+function toGrid(tiles: Tile[], size: number): (Tile | undefined)[][] {
+  const grid: (Tile | undefined)[][] = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => undefined),
   )
   for (const t of tiles) {
     if (!t.isGhost) grid[t.row][t.col] = t
@@ -57,11 +57,12 @@ function toGrid(tiles: Tile[]): (Tile | undefined)[][] {
 }
 
 /** 列出所有空格 */
-export function emptyCells(tiles: Tile[]): Position[] {
-  const grid = toGrid(tiles)
+export function emptyCells(core: Core): Position[] {
+  const { size } = core
+  const grid = toGrid(core.tiles, size)
   const out: Position[] = []
-  for (let row = 0; row < SIZE; row++) {
-    for (let col = 0; col < SIZE; col++) {
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
       if (!grid[row][col]) out.push({ row, col })
     }
   }
@@ -69,15 +70,16 @@ export function emptyCells(tiles: Tile[]): Position[] {
 }
 
 /** 是否还有任何可行的移动（有空格，或存在相邻的相同数字） */
-export function hasMoves(tiles: Tile[]): boolean {
-  const grid = toGrid(tiles)
-  for (let row = 0; row < SIZE; row++) {
-    for (let col = 0; col < SIZE; col++) {
+export function hasMoves(core: Core): boolean {
+  const { size } = core
+  const grid = toGrid(core.tiles, size)
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
       const t = grid[row][col]
       if (!t) return true
       // 只需向右和向下比较，即可覆盖所有相邻对
-      const right = inBounds(col + 1) ? grid[row][col + 1] : undefined
-      const down = inBounds(row + 1) ? grid[row + 1][col] : undefined
+      const right = inBounds(col + 1, size) ? grid[row][col + 1] : undefined
+      const down = inBounds(row + 1, size) ? grid[row + 1][col] : undefined
       if (right?.value === t.value || down?.value === t.value) return true
     }
   }
@@ -86,7 +88,7 @@ export function hasMoves(tiles: Tile[]): boolean {
 
 /** 在随机空格生成一个新方块（90% 出 2，10% 出 4） */
 export function spawnTile(core: Core, rng: Rng): Core {
-  const empties = emptyCells(core.tiles)
+  const empties = emptyCells(core)
   if (empties.length === 0) return core
 
   const cell = empties[Math.floor(rng() * empties.length)]
@@ -101,8 +103,9 @@ export function spawnTile(core: Core, rng: Rng): Core {
 }
 
 /** 开局：空棋盘 + 两个随机方块 */
-export function createGame(rng: Rng = Math.random): Core {
+export function createGame(size: BoardSize, rng: Rng = Math.random): Core {
   const empty: Core = {
+    size,
     tiles: [],
     score: 0,
     won: false,
@@ -121,19 +124,21 @@ export function createGame(rng: Rng = Math.random): Core {
  * 这样两个方块都有真实的位移过渡，视觉上就是「滑过去然后合并」。
  */
 export function move(core: Core, dir: Direction, rng: Rng = Math.random): MoveResult {
+  const { size } = core
+
   // 清理上一回合的动画标记与残影
   const live: Tile[] = core.tiles
     .filter((t) => !t.isGhost)
     .map((t) => ({ id: t.id, row: t.row, col: t.col, value: t.value }))
 
-  const grid = toGrid(live)
+  const grid = toGrid(live, size)
   const survivors: Tile[] = []
   const ghosts: Tile[] = []
   let gained = 0
   let moved = false
 
-  for (let index = 0; index < SIZE; index++) {
-    const cells = lineCells(dir, index)
+  for (let index = 0; index < size; index++) {
+    const cells = lineCells(dir, index, size)
     const lineTiles = cells
       .map(({ row, col }) => grid[row][col])
       .filter((t): t is Tile => t !== undefined)
@@ -178,7 +183,7 @@ export function move(core: Core, dir: Direction, rng: Rng = Math.random): MoveRe
 
   const reachedWin = survivors.some((t) => t.value >= WIN_VALUE)
   next.won = core.won || reachedWin
-  next.over = !hasMoves(next.tiles)
+  next.over = !hasMoves(next)
 
   return { core: next, moved: true, gained }
 }

@@ -2,11 +2,24 @@ import { Board } from './components/Board'
 import { ScoreBoard } from './components/ScoreBoard'
 import { useGame } from './game/useGame'
 import { useInput } from './game/useInput'
+import { BOARD_SIZES } from './game/types'
 import './styles.css'
 
 export default function App() {
-  const { core, best, gain, canUndo, muted, move, undo, restart, keepPlaying, toggleMute } =
-    useGame()
+  const {
+    core,
+    size,
+    best,
+    gain,
+    canUndo,
+    muted,
+    move,
+    undo,
+    restart,
+    keepPlaying,
+    toggleMute,
+    setSize,
+  } = useGame()
   useInput(move, undo, toggleMute)
 
   return (
@@ -30,6 +43,19 @@ export default function App() {
           >
             {muted ? '🔇' : '🔊'}
           </button>
+          <div className="seg" role="group" aria-label="棋盘尺寸">
+            {BOARD_SIZES.map((n) => (
+              <button
+                key={n}
+                className={`seg-btn${n === size ? ' seg-btn-on' : ''}`}
+                onClick={() => setSize(n)}
+                title={`切换到 ${n}×${n}（各尺寸进度独立保存）`}
+                aria-pressed={n === size}
+              >
+                {n}×{n}
+              </button>
+            ))}
+          </div>
           <button className="btn" onClick={undo} disabled={!canUndo} title="撤销上一步（Z）">
             撤销
           </button>

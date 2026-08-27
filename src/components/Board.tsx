@@ -17,10 +17,21 @@ export function Board({ core, onRestart, onKeepPlaying }: Props) {
   const tiles = [...core.tiles].sort((a, b) => a.id - b.id)
 
   return (
-    <div className="board">
-      <GridBackground />
+    <div
+      className="board"
+      data-size={core.size}
+      // 覆盖 :root 的默认值，.grid-bg 的 repeat() 与 .tile 的位置公式都会跟随
+      style={{ '--size': core.size } as React.CSSProperties}
+    >
+      <GridBackground size={core.size} />
 
-      <div className="tiles">
+      {/*
+       * key 带上尺寸：切换尺寸时 id 会从 1 重新开始，若沿用纯 id 作为 key，
+       * React 会复用上一个尺寸的 DOM 节点，而节点上残留的 transform
+       * 是按旧格子尺寸算出的，方块会停在错位的位置。
+       * 换 key 迫使 React 重建节点，位置从新尺寸重新计算。
+       */}
+      <div className="tiles" key={core.size}>
         {tiles.map((tile) => (
           <Tile key={tile.id} tile={tile} />
         ))}

@@ -181,6 +181,45 @@ body {
   line-height: 1;
 }
 
+/* 分段选择器：4×4 / 5×5，视觉上是一个整体 */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: #d6cdc4;
+}
+
+.seg-btn {
+  padding: 7px 10px;
+  border: none;
+  border-radius: calc(var(--radius) - 1px);
+  background: transparent;
+  color: #776e65;
+  /* 用 font 简写继承字体族；注意它会重置 font-size，故随后再声明 */
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.seg-btn:hover:not(.seg-btn-on) {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.seg-btn-on {
+  background: var(--btn);
+  color: var(--text-light);
+  cursor: default;
+}
+
+.seg-btn:focus-visible {
+  outline: 3px solid rgba(143, 122, 102, 0.5);
+  outline-offset: 1px;
+}
+
 .btn:focus-visible {
   outline: 3px solid rgba(143, 122, 102, 0.5);
   outline-offset: 2px;
@@ -198,6 +237,12 @@ body {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /*
+   * 字号缩放系数：4×4 为 1，5×5 为 0.8。
+   * 因为 cqw 相对的是整个棋盘而非单个格子，格子随 --size 变小时
+   * 字号不会自动跟随，需要按同比例缩小才能保持观感一致。
+   */
+  --font-scale: calc(4 / var(--size));
 }
 
 .grid-bg,
@@ -222,7 +267,7 @@ body {
 
 .tile {
   /*
-   * 每格边长 = (棋盘内宽 - 3 个间隙) / 4
+   * 每格边长 = (棋盘内宽 - (size-1) 个间隙) / size
    * 用 CSS 变量算出偏移，位置变化时靠 transition 产生滑动动画
    */
   --cell-size: calc((100% - (var(--size) - 1) * var(--gap)) / var(--size));
@@ -250,7 +295,11 @@ body {
   border-radius: var(--radius);
   background: #eee4da;
   color: var(--text);
-  font-size: clamp(24px, 8.5cqw, 44px);
+  font-size: clamp(
+    calc(24px * var(--font-scale)),
+    calc(8.5cqw * var(--font-scale)),
+    calc(44px * var(--font-scale))
+  );
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -260,15 +309,27 @@ body {
   container-type: size;
 }
 
-/* 数字越多字号越小，避免溢出格子 */
+/* 数字越多字号越小，避免溢出格子；同样按 --font-scale 随尺寸缩放 */
 .tile-digits-3 .tile-inner {
-  font-size: clamp(20px, 7cqw, 36px);
+  font-size: clamp(
+    calc(20px * var(--font-scale)),
+    calc(7cqw * var(--font-scale)),
+    calc(36px * var(--font-scale))
+  );
 }
 .tile-digits-4 .tile-inner {
-  font-size: clamp(16px, 5.6cqw, 30px);
+  font-size: clamp(
+    calc(16px * var(--font-scale)),
+    calc(5.6cqw * var(--font-scale)),
+    calc(30px * var(--font-scale))
+  );
 }
 .tile-digits-5 .tile-inner {
-  font-size: clamp(13px, 4.6cqw, 24px);
+  font-size: clamp(
+    calc(13px * var(--font-scale)),
+    calc(4.6cqw * var(--font-scale)),
+    calc(24px * var(--font-scale))
+  );
 }
 
 /* 各数值配色 */

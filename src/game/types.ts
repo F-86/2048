@@ -1,7 +1,13 @@
-/** 棋盘边长（4x4） */
-export const SIZE = 4
+/** 支持的棋盘边长 */
+export type BoardSize = 4 | 5
 
-/** 达成即算胜利的目标数字 */
+/** 可选的棋盘尺寸，顺序即 UI 上的展示顺序 */
+export const BOARD_SIZES: readonly BoardSize[] = [4, 5]
+
+/** 默认棋盘尺寸（经典 2048） */
+export const DEFAULT_SIZE: BoardSize = 4
+
+/** 达成即算胜利的目标数字，两种尺寸共用 */
 export const WIN_VALUE = 2048
 
 export type Direction = 'up' | 'down' | 'left' | 'right'
@@ -25,6 +31,8 @@ export interface Tile extends Position {
 
 /** 游戏核心状态（不含 best / 撤销历史等外围数据） */
 export interface Core {
+  /** 棋盘边长，随对局持久化，用于校验存档与目标尺寸是否匹配 */
+  size: BoardSize
   tiles: Tile[]
   score: number
   /** 是否曾达成 2048 */

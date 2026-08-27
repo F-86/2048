@@ -14,6 +14,11 @@ function scoreValue(): number {
   return Number(box.querySelector('.score-value')!.textContent)
 }
 
+function bestValue(): number {
+  const box = screen.getByText('最高分').parentElement!
+  return Number(box.querySelector('.score-value')!.textContent)
+}
+
 function press(key: string) {
   act(() => {
     fireEvent.keyDown(window, { key })
@@ -143,7 +148,41 @@ describe('App — 持久化', () => {
   })
 
   it('存档损坏时回退到新对局而不崩溃', () => {
-    localStorage.setItem('react-2048/state-v1', '{不是合法 JSON')
+    localStorage.setItem('react-2048/state-v2-4x4', '{不是合法 JSON')
+    render(<App />)
+    expect(visibleValues().length).toBe(2)
+    expect(scoreValue()).toBe(0)
+  })
+
+  it('v1 旧存档被迁移，进度不丢失', () => {
+    // v1 的 core 没有 size 字段，只可能是 4×4
+    localStorage.setItem(
+      'react-2048/state-v1',
+      JSON.stringify({
+        core: {
+          tiles: [
+            { id: 1, row: 0, col: 0, value: 8 },
+            { id: 2, row: 3, col: 3, value: 16 },
+          ],
+          score: 320,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: 3,
+        },
+        history: [],
+      }),
+    )
+    localStorage.setItem('react-2048/best-v1', '1024')
+
+    render(<App />)
+    expect(scoreValue()).toBe(320)
+    expect(bestValue()).toBe(1024)
+    expect(visibleValues().sort((a, b) => a - b)).toEqual([8, 16])
+  })
+
+  it('v1 旧存档损坏时回退到新对局', () => {
+    localStorage.setItem('react-2048/state-v1', '{坏数据')
     render(<App />)
     expect(visibleValues().length).toBe(2)
     expect(scoreValue()).toBe(0)
@@ -161,7 +200,7 @@ describe('App — 持久化', () => {
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: '新游戏' }))
     })
-    const best = Number(screen.getByText('最高分').parentElement!.querySelector('.score-value')!.textContent)
+    const best = bestValue()
     expect(best).toBeGreaterThanOrEqual(earned)
     expect(scoreValue()).toBe(0)
   })
@@ -295,6 +334,211 @@ describe('App — 音效开关', () => {
       press(key)
     }
     expect(visibleValues().length).toBeGreaterThanOrEqual(before)
+  })
+})
+
+describe('App — 棋盘尺寸切换', () => {
+  const sizeBtn = (n: 4 | 5) => screen.getByRole('button', { name: `${n}×${n}` })
+  const board = () => document.querySelector('.board') as HTMLElement
+  const cellCount = () => document.querySelectorAll('.grid-cell').length
+
+  function switchTo(n: 4 | 5) {
+    act(() => {
+      fireEvent.click(sizeBtn(n))
+    })
+  }
+
+  it('默认是 4×4，共 16 个格子', () => {
+    render(<App />)
+    expect(sizeBtn(4).getAttribute('aria-pressed')).toBe('true')
+    expect(sizeBtn(5).getAttribute('aria-pressed')).toBe('false')
+    expect(cellCount()).toBe(16)
+    expect(board().style.getPropertyValue('--size')).toBe('4')
+  })
+
+  it('切到 5×5 后有 25 个格子，CSS 变量同步更新', () => {
+    render(<App />)
+    switchTo(5)
+    expect(cellCount()).toBe(25)
+    expect(board().style.getPropertyValue('--size')).toBe('5')
+    expect(sizeBtn(5).getAttribute('aria-pressed')).toBe('true')
+    expect(sizeBtn(4).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('5×5 下方块坐标不超过 4', () => {
+    render(<App />)
+    switchTo(5)
+    const tiles = Array.from(document.querySelectorAll('.tile')) as HTMLElement[]
+    expect(tiles.length).toBeGreaterThan(0)
+    for (const t of tiles) {
+      expect(Number(t.style.getPropertyValue('--row'))).toBeLessThan(5)
+      expect(Number(t.style.getPropertyValue('--col'))).toBeLessThan(5)
+    }
+  })
+
+  it('5×5 开局也是两个方块、分数为 0', () => {
+    render(<App />)
+    switchTo(5)
+    expect(visibleValues().length).toBe(2)
+    expect(scoreValue()).toBe(0)
+  })
+
+  it('两种尺寸各自保存进度，切回来能接着玩', () => {
+    render(<App />)
+    // 在 4×4 上走几步攒分
+    for (let i = 0; i < 14; i++) {
+      press(['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'][i % 4])
+    }
+    const score4 = scoreValue()
+    const tiles4 = visibleValues().length
+    expect(score4).toBeGreaterThan(0)
+
+    // 切到 5×5：全新一局
+    switchTo(5)
+    expect(scoreValue()).toBe(0)
+    for (let i = 0; i < 8; i++) {
+      press(['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'][i % 4])
+    }
+    const score5 = scoreValue()
+
+    // 切回 4×4：分数与方块数恢复
+    switchTo(4)
+    expect(cellCount()).toBe(16)
+    expect(scoreValue()).toBe(score4)
+    expect(visibleValues().length).toBe(tiles4)
+
+    // 再切到 5×5：那局也还在
+    switchTo(5)
+    expect(cellCount()).toBe(25)
+    expect(scoreValue()).toBe(score5)
+  })
+
+  it('最高分按尺寸独立，不会串到另一个尺寸', () => {
+    render(<App />)
+    for (let i = 0; i < 16; i++) {
+      press(['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'][i % 4])
+    }
+    const best4 = bestValue()
+    expect(best4).toBeGreaterThan(0)
+
+    switchTo(5)
+    // 5×5 是新尺寸，最高分应从 0 开始
+    expect(bestValue()).toBe(0)
+
+    switchTo(4)
+    expect(bestValue()).toBe(best4)
+  })
+
+  it('切换后撤销栈是目标尺寸自己的（新局不可撤销）', () => {
+    render(<App />)
+    for (let i = 0; i < 6; i++) {
+      press(['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'][i % 4])
+    }
+    const undoBtn = () => screen.getByRole('button', { name: '撤销' })
+    expect(undoBtn().hasAttribute('disabled')).toBe(false)
+
+    switchTo(5)
+    // 5×5 是全新一局，没有可撤销的步骤
+    expect(undoBtn().hasAttribute('disabled')).toBe(true)
+
+    switchTo(4)
+    // 4×4 的撤销栈还在
+    expect(undoBtn().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('最后使用的尺寸在刷新后恢复', () => {
+    const { unmount } = render(<App />)
+    switchTo(5)
+    expect(cellCount()).toBe(25)
+    unmount()
+
+    render(<App />)
+    expect(cellCount()).toBe(25)
+    expect(sizeBtn(5).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('点击当前尺寸不重置对局', () => {
+    render(<App />)
+    for (let i = 0; i < 10; i++) {
+      press(['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'][i % 4])
+    }
+    const before = scoreValue()
+    const tilesBefore = visibleValues().length
+
+    switchTo(4) // 已经是 4×4
+    expect(scoreValue()).toBe(before)
+    expect(visibleValues().length).toBe(tilesBefore)
+  })
+
+  it('5×5 下新游戏仍是 5×5', () => {
+    render(<App />)
+    switchTo(5)
+    for (let i = 0; i < 6; i++) {
+      press(['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'][i % 4])
+    }
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: '新游戏' }))
+    })
+    expect(cellCount()).toBe(25)
+    expect(visibleValues().length).toBe(2)
+    expect(scoreValue()).toBe(0)
+  })
+
+  it('5×5 下键盘与撤销正常工作', () => {
+    render(<App />)
+    switchTo(5)
+    const before = visibleValues().length
+
+    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
+      press(key)
+      if (visibleValues().length > before) break
+    }
+    expect(visibleValues().length).toBeGreaterThan(before)
+
+    press('z')
+    expect(visibleValues().length).toBe(before)
+  })
+  it('切换尺寸时重建方块容器，避免复用旧节点', () => {
+    // 切换尺寸后 id 会从 1 重新开始，若沿用纯 id 作为 key，
+    // React 会复用上一个尺寸的 DOM 节点，节点上残留的 transform
+    // 是按旧格子尺寸算出的，方块会停在错位的位置。
+    // 这里断言容器被真正替换，从而保证节点是新建的。
+    render(<App />)
+    const before = document.querySelector('.tiles')
+    const tileBefore = document.querySelector('.tile')
+    expect(before).not.toBeNull()
+
+    switchTo(5)
+    const after = document.querySelector('.tiles')
+    const tileAfter = document.querySelector('.tile')
+    expect(after).not.toBeNull()
+    // 必须是不同的 DOM 节点，而非同一节点被复用
+    expect(after).not.toBe(before)
+    expect(tileAfter).not.toBe(tileBefore)
+  })
+
+  it('切换后每个方块的 --row/--col 都落在新尺寸范围内', () => {
+    render(<App />)
+    switchTo(5)
+    const tiles = Array.from(document.querySelectorAll('.tile')) as HTMLElement[]
+    expect(tiles.length).toBeGreaterThan(0)
+    for (const t of tiles) {
+      const row = Number(t.style.getPropertyValue('--row'))
+      const col = Number(t.style.getPropertyValue('--col'))
+      expect(Number.isInteger(row)).toBe(true)
+      expect(Number.isInteger(col)).toBe(true)
+      expect(row).toBeGreaterThanOrEqual(0)
+      expect(row).toBeLessThan(5)
+      expect(col).toBeGreaterThanOrEqual(0)
+      expect(col).toBeLessThan(5)
+    }
+
+    // 切回 4×4 时同理
+    switchTo(4)
+    for (const t of Array.from(document.querySelectorAll('.tile')) as HTMLElement[]) {
+      expect(Number(t.style.getPropertyValue('--row'))).toBeLessThan(4)
+      expect(Number(t.style.getPropertyValue('--col'))).toBeLessThan(4)
+    }
   })
 })
 

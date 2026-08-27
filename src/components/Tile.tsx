@@ -1,4 +1,4 @@
-import { SIZE, type Tile as TileModel } from '../game/types'
+import { type Tile as TileModel } from '../game/types'
 
 interface Props {
   tile: TileModel
@@ -34,10 +34,10 @@ export function Tile({ tile }: Props) {
 }
 
 /** 棋盘背景的空格子 */
-export function GridBackground() {
+export function GridBackground({ size }: { size: number }) {
   return (
     <div className="grid-bg" aria-hidden="true">
-      {Array.from({ length: SIZE * SIZE }, (_, i) => (
+      {Array.from({ length: size * size }, (_, i) => (
         <div key={i} className="grid-cell" />
       ))}
     </div>
