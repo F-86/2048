@@ -52,6 +52,12 @@ export function isValidCore(value: unknown, size: BoardSize): value is Core {
   if (core.size !== size) return false
   if (typeof core.score !== 'number' || !Number.isFinite(core.score)) return false
   if (typeof core.nextId !== 'number' || !Number.isFinite(core.nextId)) return false
+  // 预告值必须是真实会出现的数字：若为 undefined，下一次落子会生成 value 为
+  // undefined 的方块，合并后变成 NaN 并污染分数
+  if (core.next !== 2 && core.next !== 4) return false
+  if (typeof core.streak !== 'number' || !Number.isFinite(core.streak) || core.streak < 0) {
+    return false
+  }
   if (!Array.isArray(core.tiles)) return false
 
   for (const tile of core.tiles) {
@@ -60,9 +66,30 @@ export function isValidCore(value: unknown, size: BoardSize): value is Core {
     if (!Number.isInteger(row) || row < 0 || row >= size) return false
     if (!Number.isInteger(col) || col < 0 || col >= size) return false
     if (!Number.isInteger(id)) return false
-    if (typeof v !== 'number' || v < 2) return false
+    // 必须是 2 的幂：同时挡掉 NaN（Math.log2(NaN) 不是整数）
+    if (typeof v !== 'number' || v < 2 || !Number.isInteger(Math.log2(v))) return false
   }
   return true
+}
+
+/**
+ * 给旧版存档补上后来才引入的字段。
+ *
+ * 早期存档没有 `next` / `streak`（以及 v1 时期没有 `size`）。这些字段现在是必填的，
+ * 直接拿去校验会被判为损坏而丢弃玩家的进度，所以先补默认值再校验。
+ */
+function withDefaults(entry: unknown, size: BoardSize, addSize: boolean): unknown {
+  if (!entry || typeof entry !== 'object') return entry
+  const core = entry as Partial<Core>
+  const patch: Partial<Core> = {}
+
+  if (addSize && !('size' in core)) patch.size = size
+  if (core.next !== 2 && core.next !== 4) patch.next = 2
+  if (typeof core.streak !== 'number' || !Number.isFinite(core.streak) || core.streak < 0) {
+    patch.streak = 0
+  }
+
+  return Object.keys(patch).length > 0 ? { ...core, ...patch } : entry
 }
 
 /**
@@ -91,21 +118,13 @@ export function loadSaved(size: BoardSize): Saved | null {
 function parseSaved(raw: string, size: BoardSize, addSize = false): Saved | null {
   try {
     const parsed = JSON.parse(raw) as { core?: unknown; history?: unknown }
-    let core = parsed.core
-
-    if (addSize && core && typeof core === 'object' && !('size' in core)) {
-      core = { ...(core as object), size }
-    }
+    const core = withDefaults(parsed.core, size, addSize)
     if (!isValidCore(core, size)) return null
 
     // 撤销栈里只要有一项不合法就整个丢弃：跨尺寸的历史会让 undo 产出坏状态
     let history: Core[] = []
     if (Array.isArray(parsed.history)) {
-      const entries = addSize
-        ? parsed.history.map((h) =>
-            h && typeof h === 'object' && !('size' in h) ? { ...(h as object), size } : h,
-          )
-        : parsed.history
+      const entries = parsed.history.map((h) => withDefaults(h, size, addSize))
       history = entries.every((h) => isValidCore(h, size)) ? (entries as Core[]) : []
     }
 

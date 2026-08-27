@@ -10,6 +10,12 @@ export const DEFAULT_SIZE: BoardSize = 4
 /** 达成即算胜利的目标数字，两种尺寸共用 */
 export const WIN_VALUE = 2048
 
+/** 撤销一步的分数代价：让每个决策重新有重量 */
+export const UNDO_COST = 500
+
+/** 空格数少于等于该值时进入「危险」状态（泛红 + 心跳） */
+export const DANGER_CELLS = 2
+
 export type Direction = 'up' | 'down' | 'left' | 'right'
 
 export interface Position {
@@ -43,6 +49,10 @@ export interface Core {
   over: boolean
   /** 下一个可用的方块 id */
   nextId: number
+  /** 下一个将要生成的方块数值（2 或 4），提前决定以便 UI 预告 */
+  next: number
+  /** 连续有合并的移动数，用于连击加成；走出一步没有合并就归零 */
+  streak: number
 }
 
 /** 随机数发生器，注入以便测试可复现 */

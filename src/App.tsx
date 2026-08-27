@@ -13,6 +13,13 @@ export default function App() {
     gain,
     canUndo,
     muted,
+    danger,
+    beatRecord,
+    stats,
+    maxTile,
+    shakeSeq,
+    nextTile,
+    undoCost,
     move,
     undo,
     restart,
@@ -26,12 +33,20 @@ export default function App() {
     <div className="app">
       <header className="header">
         <h1 className="title">2048</h1>
-        <ScoreBoard score={core.score} best={best} gain={gain} />
+        <ScoreBoard
+          score={core.score}
+          best={best}
+          gain={gain}
+          nextTile={nextTile}
+          beatRecord={beatRecord}
+        />
       </header>
 
       <div className="toolbar">
         <p className="hint">
           用<strong>方向键</strong>或<strong>滑动</strong>合并相同数字，凑出 <strong>2048</strong>
+          <br />
+          一次合并多对有<strong>连锁加成</strong>，连续合并再叠<strong>连击</strong>
         </p>
         <div className="toolbar-actions">
           <button
@@ -56,8 +71,17 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button className="btn" onClick={undo} disabled={!canUndo} title="撤销上一步（Z）">
+          <button
+            className="btn"
+            onClick={undo}
+            disabled={!canUndo}
+            title={`撤销上一步（Z）—— 花费 ${undoCost} 分`}
+          >
             撤销
+            {/* 费用另起一个 aria-hidden 的节点，让按钮的无障碍名仍是「撤销」 */}
+            <span className="btn-cost" aria-hidden="true">
+              -{undoCost}
+            </span>
           </button>
           <button className="btn btn-primary" onClick={restart}>
             新游戏
@@ -65,7 +89,16 @@ export default function App() {
         </div>
       </div>
 
-      <Board core={core} onRestart={restart} onKeepPlaying={keepPlaying} />
+      <Board
+        core={core}
+        danger={danger}
+        stats={stats}
+        maxTile={maxTile}
+        beatRecord={beatRecord}
+        shakeSeq={shakeSeq}
+        onRestart={restart}
+        onKeepPlaying={keepPlaying}
+      />
 
       <footer className="footer">
         方向键 / WASD / HJKL 移动 · Z 撤销 · M 静音 · 手机在棋盘上滑动

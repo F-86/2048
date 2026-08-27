@@ -25,6 +25,35 @@ function press(key: string) {
   })
 }
 
+/** 撤销的分数代价，与 types.ts 的 UNDO_COST 保持一致 */
+const UNDO_COST = 500
+
+/**
+ * 写入一份「分数足够付撤销费」的存档，并预置一步可撤销的历史。
+ * 撤销要花 500 分，靠按方向键在测试里攒不到，只能预先塞存档。
+ */
+function seedRichSave(size: 4 | 5 = 4, score = 5000) {
+  const core = {
+    size,
+    tiles: [
+      { id: 1, row: 0, col: 0, value: 2 },
+      { id: 2, row: 0, col: 1, value: 2 },
+    ],
+    score,
+    won: false,
+    keepPlaying: false,
+    over: false,
+    nextId: 3,
+    next: 2,
+    streak: 0,
+  }
+  localStorage.setItem('react-2048/size-v1', String(size))
+  localStorage.setItem(
+    `react-2048/state-v2-${size}x${size}`,
+    JSON.stringify({ core, history: [core] }),
+  )
+}
+
 beforeEach(() => {
   localStorage.clear()
 })
@@ -86,32 +115,65 @@ describe('App — 撤销', () => {
     expect(screen.getByRole('button', { name: '撤销' }).hasAttribute('disabled')).toBe(true)
   })
 
-  it('移动后可撤销，且恢复到移动前的方块数', () => {
+  it('分数不够付撤销费时按钮禁用', () => {
     render(<App />)
     const before = visibleValues().length
-
     for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
       press(key)
       if (visibleValues().length > before) break
     }
+    // 确实走了一步（有可撤销的历史），但分数远不够 500
+    expect(scoreValue()).toBeLessThan(UNDO_COST)
+    expect(screen.getByRole('button', { name: '撤销' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('分数不够时按 Z 键也不能撤销（绕不过按钮的限制）', () => {
+    render(<App />)
+    const before = visibleValues().length
+    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
+      press(key)
+      if (visibleValues().length > before) break
+    }
+    const tilesAfterMove = visibleValues().length
+    press('z')
+    expect(visibleValues().length).toBe(tilesAfterMove)
+  })
+
+  it('分数足够时可撤销，并扣掉 500 分', () => {
+    seedRichSave(4, 5000)
+    render(<App />)
     const undoBtn = screen.getByRole('button', { name: '撤销' })
     expect(undoBtn.hasAttribute('disabled')).toBe(false)
 
     act(() => {
       fireEvent.click(undoBtn)
     })
-    expect(visibleValues().length).toBe(before)
+    expect(scoreValue()).toBe(4500)
   })
 
-  it('按 Z 键也能撤销', () => {
+  it('按 Z 键也能撤销并扣分', () => {
+    seedRichSave(4, 5000)
     render(<App />)
-    const before = visibleValues().length
-    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
-      press(key)
-      if (visibleValues().length > before) break
-    }
     press('z')
-    expect(visibleValues().length).toBe(before)
+    expect(scoreValue()).toBe(4500)
+  })
+
+  it('撤销不降低最高分', () => {
+    seedRichSave(4, 5000)
+    render(<App />)
+    const bestBefore = bestValue()
+    press('z')
+    expect(scoreValue()).toBe(4500)
+    expect(bestValue()).toBe(bestBefore)
+  })
+
+  it('撤销后分数不足则不能再撤销', () => {
+    // 只够付一次
+    seedRichSave(4, UNDO_COST)
+    render(<App />)
+    press('z')
+    expect(scoreValue()).toBe(0)
+    expect(screen.getByRole('button', { name: '撤销' }).hasAttribute('disabled')).toBe(true)
   })
 })
 
@@ -430,10 +492,9 @@ describe('App — 棋盘尺寸切换', () => {
   })
 
   it('切换后撤销栈是目标尺寸自己的（新局不可撤销）', () => {
+    // 4×4 预置一份分数够撤销的存档，5×5 则是全新一局
+    seedRichSave(4, 5000)
     render(<App />)
-    for (let i = 0; i < 6; i++) {
-      press(['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'][i % 4])
-    }
     const undoBtn = () => screen.getByRole('button', { name: '撤销' })
     expect(undoBtn().hasAttribute('disabled')).toBe(false)
 
@@ -485,8 +546,9 @@ describe('App — 棋盘尺寸切换', () => {
   })
 
   it('5×5 下键盘与撤销正常工作', () => {
+    // 5×5 也预置足够的分数，否则撤销买不起
+    seedRichSave(5, 5000)
     render(<App />)
-    switchTo(5)
     const before = visibleValues().length
 
     for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
@@ -562,5 +624,192 @@ describe('App — 方块定位', () => {
   it('新生成的方块带 tile-new 类以播放出现动画', () => {
     render(<App />)
     expect(document.querySelectorAll('.tile-new').length).toBeGreaterThan(0)
+  })
+})
+
+describe('App — 下一个方块预告', () => {
+  it('显示预告值，且是 2 或 4', () => {
+    render(<App />)
+    const box = screen.getByText('下一个').parentElement!
+    const shown = Number(box.querySelector('.score-next')!.textContent)
+    expect([2, 4]).toContain(shown)
+  })
+
+  it('预告的数值就是下一个真正落下的方块', () => {
+    render(<App />)
+    const readNext = () =>
+      Number(screen.getByText('下一个').parentElement!.querySelector('.score-next')!.textContent)
+    const promised = readNext()
+
+    const before = visibleValues().length
+    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
+      press(key)
+      if (visibleValues().length > before) break
+    }
+
+    // 新生成的那一块（带 tile-new）的数值应与之前的预告一致
+    const spawned = Array.from(document.querySelectorAll('.tile-new')).map((el) =>
+      Number(el.textContent),
+    )
+    expect(spawned).toContain(promised)
+  })
+})
+
+describe('App — 连锁与连击', () => {
+  /** 用存档摆一个「一次左移能合并两对」的局面 */
+  function seedTwoPairs() {
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles: [
+            { id: 1, row: 0, col: 0, value: 2 },
+            { id: 2, row: 0, col: 1, value: 2 },
+            { id: 3, row: 1, col: 0, value: 4 },
+            { id: 4, row: 1, col: 1, value: 4 },
+          ],
+          score: 0,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: 5,
+          next: 2,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  it('一次合并两对时分数带连锁倍率', () => {
+    seedTwoPairs()
+    render(<App />)
+    press('ArrowLeft')
+    // 基础分 4+8=12，两对连锁 ×1.5 → 18
+    expect(scoreValue()).toBe(18)
+  })
+
+  it('连锁时显示倍率并触发棋盘震动', () => {
+    seedTwoPairs()
+    render(<App />)
+    press('ArrowLeft')
+    expect(document.querySelector('.score-mult')!.textContent).toBe('×1.5')
+    expect(document.querySelector('.board')!.className).toMatch(/board-shake-/)
+  })
+
+  it('单对合并不显示倍率', () => {
+    render(<App />)
+    for (const key of ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown']) {
+      press(key)
+      if (scoreValue() > 0) break
+    }
+    // 单对合并倍率为 1，不该占位置
+    if (scoreValue() === 4) {
+      expect(document.querySelector('.score-mult')).toBeNull()
+    }
+  })
+})
+
+describe('App — 危险预警', () => {
+  /** 只留 targetEmpty 个空格的存档 */
+  function seedNearFull(targetEmpty: number) {
+    const tiles: { id: number; row: number; col: number; value: number }[] = []
+    let id = 1
+    // 用交替的 2/4 填满，避免相邻同数造成提前结束
+    const values = [2, 4]
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        if (16 - tiles.length <= targetEmpty) break
+        tiles.push({ id: id++, row, col, value: values[(row + col) % 2] })
+      }
+    }
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles,
+          score: 1000,
+          won: false,
+          keepPlaying: false,
+          over: false,
+          nextId: id,
+          next: 2,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  it('空格充裕时棋盘没有危险标记', () => {
+    render(<App />)
+    expect(document.querySelector('.board')!.classList.contains('board-danger')).toBe(false)
+  })
+
+  it('空格降到阈值内时棋盘带上危险标记', () => {
+    seedNearFull(2)
+    render(<App />)
+    expect(document.querySelector('.board')!.classList.contains('board-danger')).toBe(true)
+  })
+})
+
+describe('App — 局后复盘', () => {
+  /** 摆一个只剩一步可走、走完必死的局面 */
+  function seedAlmostOver() {
+    const tiles: { id: number; row: number; col: number; value: number }[] = []
+    let id = 1
+    // 除最后一格外全部填上互不相同的相邻值
+    const grid = [
+      [2, 4, 2, 4],
+      [4, 2, 4, 2],
+      [2, 4, 2, 4],
+      [4, 2, 4, 0],
+    ]
+    grid.forEach((row, r) =>
+      row.forEach((v, c) => {
+        if (v !== 0) tiles.push({ id: id++, row: r, col: c, value: v })
+      }),
+    )
+    localStorage.setItem('react-2048/size-v1', '4')
+    localStorage.setItem(
+      'react-2048/state-v2-4x4',
+      JSON.stringify({
+        core: {
+          size: 4,
+          tiles,
+          score: 2000,
+          won: false,
+          keepPlaying: false,
+          over: true,
+          nextId: id,
+          next: 2,
+          streak: 0,
+        },
+        history: [],
+      }),
+    )
+  }
+
+  it('游戏结束时显示复盘卡片的各项统计', () => {
+    seedAlmostOver()
+    render(<App />)
+    expect(screen.getByText('游戏结束')).toBeDefined()
+    expect(screen.getByText('最终得分')).toBeDefined()
+    expect(screen.getByText('最大方块')).toBeDefined()
+    expect(screen.getByText('移动步数')).toBeDefined()
+    expect(screen.getByText('合并次数')).toBeDefined()
+    expect(screen.getByText('最长连击')).toBeDefined()
+    expect(screen.getByText('撤销次数')).toBeDefined()
+  })
+
+  it('复盘里的最大方块取自棋盘上真实的最大值', () => {
+    seedAlmostOver()
+    render(<App />)
+    const item = screen.getByText('最大方块').parentElement!
+    expect(Number(item.querySelector('.recap-value')!.textContent)).toBe(4)
   })
 })

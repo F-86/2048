@@ -149,6 +149,9 @@ describe('sfx — 基本发声', () => {
     const cases: Array<[string, () => void]> = [
       ['move', () => sfx.move()],
       ['merge', () => sfx.merge(8)],
+      ['combo', () => sfx.combo(8, 3)],
+      ['danger', () => sfx.danger()],
+      ['record', () => sfx.record()],
       ['win', () => sfx.win()],
       ['over', () => sfx.over()],
       ['undo', () => sfx.undo()],
@@ -269,6 +272,52 @@ describe('sfx — 多音音效', () => {
     const f0 = created.oscillators[0].frequency.calls[0].args[0]
     const f1 = created.oscillators[1].frequency.calls[0].args[0]
     expect(f1).toBeGreaterThan(f0)
+  })
+
+  it('连锁音是上行琶音，音数随合并对数增加', async () => {
+    const { sfx } = await freshSfx()
+    sfx.combo(8, 2)
+    const two = created.oscillators.length
+    created.oscillators.length = 0
+    sfx.combo(8, 4)
+    expect(created.oscillators.length).toBeGreaterThan(two)
+
+    // 音高逐级上行，起音时间依次延后
+    const freqs = created.oscillators.map((o) => o.frequency.calls[0].args[0])
+    const starts = created.oscillators.map((o) => o.started[0])
+    for (let i = 1; i < freqs.length; i++) {
+      expect(freqs[i]).toBeGreaterThan(freqs[i - 1])
+      expect(starts[i]).toBeGreaterThan(starts[i - 1])
+    }
+  })
+
+  it('连锁音的音数有上限，超长连锁不会无限爬高', async () => {
+    const { sfx } = await freshSfx()
+    sfx.combo(8, 99)
+    expect(created.oscillators.length).toBeLessThanOrEqual(4)
+  })
+
+  it('危险音是两声低频心跳', async () => {
+    const { sfx } = await freshSfx()
+    sfx.danger()
+    expect(created.oscillators.length).toBe(2)
+    for (const osc of created.oscillators) {
+      const freq = osc.frequency.calls[0].args[0]
+      // 心跳要低沉，压在 120Hz 以下
+      expect(freq).toBeLessThan(120)
+    }
+    // 第二声晚于第一声
+    expect(created.oscillators[1].started[0]).toBeGreaterThan(created.oscillators[0].started[0])
+  })
+
+  it('破纪录音是上行三音', async () => {
+    const { sfx } = await freshSfx()
+    sfx.record()
+    expect(created.oscillators.length).toBe(3)
+    const freqs = created.oscillators.map((o) => o.frequency.calls[0].args[0])
+    for (let i = 1; i < freqs.length; i++) {
+      expect(freqs[i]).toBeGreaterThan(freqs[i - 1])
+    }
   })
 })
 

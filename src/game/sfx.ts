@@ -112,6 +112,13 @@ function noiseTick(gain = 0.1, duration = 0.045) {
   src.start()
 }
 
+/** 把合成出的数字映射到五声音阶上的半音数（4 → 第 0 级，8 → 第 1 级，依此类推） */
+function valueToSemitone(value: number): number {
+  const step = Math.max(0, Math.round(Math.log2(value)) - 2)
+  const octave = Math.floor(step / PENTATONIC.length)
+  return PENTATONIC[step % PENTATONIC.length] + octave * 12
+}
+
 export const sfx = {
   /** 方块滑动：很轻的一声闷响，不抢戏 */
   move() {
@@ -126,14 +133,36 @@ export const sfx = {
    */
   merge(value: number) {
     resume()
-    const step = Math.max(0, Math.round(Math.log2(value)) - 2)
-    const octave = Math.floor(step / PENTATONIC.length)
-    const semitone = PENTATONIC[step % PENTATONIC.length] + octave * 12
-    const freq = noteToFreq(semitone - 9) // 以 C4 附近起音
+    const freq = noteToFreq(valueToSemitone(value) - 9) // 以 C4 附近起音
 
     tone({ freq, duration: 0.2, type: 'triangle', gain: 0.5 })
     // 叠加高八度泛音，让合并声更明亮清脆
     tone({ freq: freq * 2, duration: 0.14, type: 'sine', gain: 0.18, delay: 0.01 })
+  },
+
+  /**
+   * 连锁：一次移动合并多对时播放上行琶音，对数越多音阶爬得越高。
+   * 用五声音阶逐级向上，保证任意长度都不刺耳。
+   */
+  combo(value: number, count: number) {
+    resume()
+    const baseStep = Math.max(0, Math.round(Math.log2(value)) - 2)
+    // 最多爬 4 级，避免超长连锁把音高推到刺耳的区间
+    const steps = Math.min(Math.max(count, 2), 4)
+
+    for (let i = 0; i < steps; i++) {
+      const step = baseStep + i
+      const octave = Math.floor(step / PENTATONIC.length)
+      const semitone = PENTATONIC[step % PENTATONIC.length] + octave * 12
+      tone({
+        freq: noteToFreq(semitone - 9),
+        duration: 0.22,
+        type: 'triangle',
+        // 后面的音略轻，听感是「一串」而不是「一堆」
+        gain: 0.46 - i * 0.05,
+        delay: i * 0.06,
+      })
+    }
   },
 
   /** 胜利：上行的小琶音 */
@@ -147,6 +176,31 @@ export const sfx = {
         type: 'triangle',
         gain: 0.42,
         delay: i * 0.11,
+      })
+    })
+  },
+
+  /** 危险：两声低频闷响，像心跳，提示空格快用完了 */
+  danger() {
+    resume()
+    const beat = (delay: number, gain: number) => {
+      noiseTick(0.05, 0.05)
+      tone({ freq: 92, duration: 0.17, type: 'sine', gain, delay, glideTo: 62 })
+    }
+    beat(0, 0.5)
+    beat(0.22, 0.34)
+  },
+
+  /** 破纪录：短促的上行三音，比胜利音轻，不打断节奏 */
+  record() {
+    resume()
+    ;[0, 4, 9].forEach((semi, i) => {
+      tone({
+        freq: noteToFreq(semi),
+        duration: 0.18,
+        type: 'triangle',
+        gain: 0.34,
+        delay: i * 0.05,
       })
     })
   },

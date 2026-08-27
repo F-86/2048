@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createGame, emptyCells, hasMoves, move, spawnTile } from './engine'
+import { comboMultiplier, createGame, emptyCells, hasMoves, move, spawnTile } from './engine'
 import type { BoardSize, Core, Tile } from './types'
 
 /**
@@ -22,6 +22,8 @@ function fromMatrix(matrix: number[][], overrides: Partial<Core> = {}): Core {
     keepPlaying: false,
     over: false,
     nextId,
+    next: 2,
+    streak: 0,
     ...overrides,
   }
 }
@@ -134,7 +136,8 @@ describe('move — 合并规则', () => {
     const row = toMatrix(next)[0]
     expect(row[0]).toBe(4)
     expect(row[1]).toBe(4)
-    expect(gained).toBe(8)
+    // 基础分 4+4=8，两对连锁 ×1.5 → 12
+    expect(gained).toBe(12)
   })
 
   it('向右合并时优先靠右的一对（2,2,2 → 2,4）', () => {
@@ -180,6 +183,110 @@ describe('move — 合并规则', () => {
   })
 })
 
+describe('comboMultiplier', () => {
+  it('没有合并时倍率为 1，绝不惩罚', () => {
+    // 若不钳制，1 + 0.5*(0-1) 会算出 0.5
+    expect(comboMultiplier(0, 0)).toBe(1)
+    expect(comboMultiplier(0, 5)).toBe(1)
+  })
+
+  it('首次合并（streak=1）没有连击加成', () => {
+    // 若不钳制，1 + 0.1*min(0-1, 5) 会算出 0.9
+    expect(comboMultiplier(1, 1)).toBe(1)
+    expect(comboMultiplier(1, 0)).toBe(1)
+  })
+
+  it('连锁越多倍率越高', () => {
+    expect(comboMultiplier(2, 1)).toBe(1.5)
+    expect(comboMultiplier(3, 1)).toBe(2)
+    expect(comboMultiplier(4, 1)).toBe(2.5)
+  })
+
+  it('连击加成每步 +10%，第 6 步起封顶 +50%', () => {
+    expect(comboMultiplier(1, 2)).toBeCloseTo(1.1)
+    expect(comboMultiplier(1, 6)).toBeCloseTo(1.5)
+    expect(comboMultiplier(1, 99)).toBeCloseTo(1.5)
+  })
+
+  it('任何输入都不会产生小于 1 的倍率', () => {
+    for (let m = 0; m <= 6; m++) {
+      for (let s = 0; s <= 8; s++) {
+        expect(comboMultiplier(m, s)).toBeGreaterThanOrEqual(1)
+      }
+    }
+  })
+})
+
+describe('连击（streak）', () => {
+  const twoPairs = () => [
+    [2, 2, 0, 0],
+    [4, 4, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]
+
+  it('有合并的移动让连击递增', () => {
+    const first = move(fromMatrix(twoPairs()), 'left', lastCellRng).core
+    expect(first.streak).toBe(1)
+  })
+
+  it('走出一步没有合并时连击归零', () => {
+    const core = fromMatrix(
+      [
+        [2, 0, 0, 4],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ],
+      { streak: 3 },
+    )
+    // 向左只是位移，没有任何合并
+    const { core: next, mergeCount } = move(core, 'left', lastCellRng)
+    expect(mergeCount).toBe(0)
+    expect(next.streak).toBe(0)
+  })
+
+  it('无效移动（撞墙）不打断连击', () => {
+    const core = fromMatrix(
+      [
+        [2, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ],
+      { streak: 4 },
+    )
+    const { core: next, moved } = move(core, 'left', lastCellRng)
+    expect(moved).toBe(false)
+    expect(next.streak).toBe(4)
+  })
+
+  it('连击加成会叠加到分数上', () => {
+    // 上一步已经连击 1，这一步合并一对 4 → 基础 8，streak=2 → ×1.1 → 8.8 → 9
+    const core = fromMatrix(
+      [
+        [4, 4, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ],
+      { streak: 1 },
+    )
+    const { gained, base, multiplier, mergeCount } = move(core, 'left', lastCellRng)
+    expect(base).toBe(8)
+    expect(mergeCount).toBe(1)
+    expect(multiplier).toBeCloseTo(1.1)
+    expect(gained).toBe(9)
+  })
+
+  it('score 累加的是乘算后的 gained', () => {
+    const { core: next, gained } = move(fromMatrix(twoPairs()), 'left', lastCellRng)
+    // 基础 4+8=12，两对连锁 ×1.5 → 18
+    expect(gained).toBe(18)
+    expect(next.score).toBe(18)
+  })
+})
+
 describe('新方块生成', () => {
   it('开局有两个方块，数值为 2 或 4', () => {
     const core = createGame(4, seededRng([0.1, 0.5, 0.7, 0.95]))
@@ -200,15 +307,43 @@ describe('新方块生成', () => {
     expect(next.tiles.filter((t) => t.isNew).length).toBe(1)
   })
 
-  it('rng < 0.9 出 2，否则出 4', () => {
+  it('落子用的是预告值，第二次 rng 决定的是下一个预告（<0.9 出 2，否则出 4）', () => {
     const empty = fromMatrix([
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0],
       [0, 0, 0, 0],
     ])
-    expect(spawnTile(empty, seededRng([0, 0.5])).tiles[0].value).toBe(2)
-    expect(spawnTile(empty, seededRng([0, 0.95])).tiles[0].value).toBe(4)
+    // 第 1 次 rng 选位置，第 2 次掷出「下一个」预告值
+    expect(spawnTile(empty, seededRng([0, 0.5])).next).toBe(2)
+    expect(spawnTile(empty, seededRng([0, 0.95])).next).toBe(4)
+  })
+
+  it('生成的方块数值等于入参的 next（预告不说谎）', () => {
+    const empty = fromMatrix(
+      [
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+      ],
+      { next: 4 },
+    )
+    expect(spawnTile(empty, seededRng([0, 0.5])).tiles[0].value).toBe(4)
+  })
+
+  it('棋盘满时既不生成新方块，也不消耗预告值', () => {
+    const full = fromMatrix(
+      [
+        [2, 4, 2, 4],
+        [4, 2, 4, 2],
+        [2, 4, 2, 4],
+        [4, 2, 4, 2],
+      ],
+      { next: 4 },
+    )
+    // 预告的数字必须留到有空位时才落下，否则玩家看到的预告永远不会出现
+    expect(spawnTile(full, seededRng([0, 0.95])).next).toBe(4)
   })
 
   it('棋盘满时不生成新方块', () => {
@@ -313,7 +448,8 @@ describe('5×5 棋盘', () => {
     expect(row[0]).toBe(4)
     expect(row[1]).toBe(4)
     expect(row[2]).toBe(2)
-    expect(gained).toBe(8)
+    // 基础分 4+4=8，两对连锁 ×1.5 → 12
+    expect(gained).toBe(12)
   })
 
   it('向右时 5 个相同数字优先合并靠右的两对', () => {

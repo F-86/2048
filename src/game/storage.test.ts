@@ -23,6 +23,8 @@ function makeCore(size: BoardSize, overrides: Partial<Core> = {}): Core {
     keepPlaying: false,
     over: false,
     nextId: 3,
+    next: 2,
+    streak: 0,
     ...overrides,
   }
 }
@@ -193,6 +195,68 @@ describe('v1 旧存档迁移', () => {
     localStorage.setItem(V1_BEST, '2048')
     expect(loadBest(4)).toBe(2048)
     expect(loadBest(5)).toBe(0)
+  })
+})
+
+describe('旧存档补默认字段（next / streak）', () => {
+  /** 引入预告与连击之前的存档：有 size，但没有 next / streak */
+  function preComboCore(score = 300) {
+    return {
+      size: 4,
+      tiles: [{ id: 1, row: 0, col: 0, value: 8 }],
+      score,
+      won: false,
+      keepPlaying: false,
+      over: false,
+      nextId: 2,
+    }
+  }
+
+  it('缺 next / streak 的存档被补上默认值而不是丢弃', () => {
+    localStorage.setItem(K4, JSON.stringify({ core: preComboCore(300), history: [] }))
+    const loaded = loadSaved(4)
+    expect(loaded).not.toBeNull()
+    expect(loaded!.core.score).toBe(300)
+    expect(loaded!.core.next).toBe(2)
+    expect(loaded!.core.streak).toBe(0)
+  })
+
+  it('撤销栈里的旧条目同样被补齐，整栈不会因此被丢弃', () => {
+    localStorage.setItem(
+      K4,
+      JSON.stringify({ core: preComboCore(), history: [preComboCore(100)] }),
+    )
+    const loaded = loadSaved(4)
+    expect(loaded!.history.length).toBe(1)
+    expect(loaded!.history[0].next).toBe(2)
+    expect(loaded!.history[0].streak).toBe(0)
+  })
+
+  it('拒绝 next 非 2/4 的存档', () => {
+    expect(isValidCore(makeCore(4, { next: 8 }), 4)).toBe(false)
+    expect(isValidCore(makeCore(4, { next: Number.NaN }), 4)).toBe(false)
+  })
+
+  it('拒绝 streak 为负数或 NaN 的存档', () => {
+    expect(isValidCore(makeCore(4, { streak: -1 }), 4)).toBe(false)
+    expect(isValidCore(makeCore(4, { streak: Number.NaN }), 4)).toBe(false)
+  })
+
+  it('拒绝方块数值不是 2 的幂的存档（含 NaN）', () => {
+    expect(
+      isValidCore(makeCore(4, { tiles: [{ id: 1, row: 0, col: 0, value: 6 }] }), 4),
+    ).toBe(false)
+    expect(
+      isValidCore(makeCore(4, { tiles: [{ id: 1, row: 0, col: 0, value: Number.NaN }] }), 4),
+    ).toBe(false)
+  })
+
+  it('分数为 NaN 的存档被拒绝，避免污染最高分', () => {
+    localStorage.setItem(
+      K4,
+      JSON.stringify({ core: { ...preComboCore(), score: null }, history: [] }),
+    )
+    expect(loadSaved(4)).toBeNull()
   })
 })
 

@@ -117,6 +117,19 @@ body {
   animation: score-float 600ms ease-in both;
 }
 
+/* 撤销扣分：飘字变红并往下走，与得分的方向相反 */
+.score-gain-cost {
+  color: #c94f3d;
+  animation-name: score-sink;
+}
+
+/* 连锁倍率，跟在增量后面小一号 */
+.score-mult {
+  margin-left: 3px;
+  font-size: 15px;
+  color: #d98b2b;
+}
+
 @keyframes score-float {
   0% {
     opacity: 1;
@@ -125,6 +138,66 @@ body {
   100% {
     opacity: 0;
     transform: translateY(-40px);
+  }
+}
+
+@keyframes score-sink {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+
+/* 下一个方块的预告格 */
+.score-box-next {
+  min-width: 62px;
+  cursor: help;
+}
+
+.score-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #eee4da;
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 预告 4 时配色跟着方块走，视觉上一眼对得上 */
+.score-next-4 {
+  background: #ede0c8;
+}
+
+/* 破纪录角标 */
+.score-record {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -17px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #d98b2b;
+  white-space: nowrap;
+  animation: record-in 420ms ease-out both;
+}
+
+@keyframes record-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -233,6 +306,14 @@ body {
   outline-offset: 2px;
 }
 
+/* 撤销按钮上的费用角标，比按钮文字小一号且不参与无障碍名 */
+.btn-cost {
+  margin-left: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.7;
+}
+
 /* ---------- 棋盘 ---------- */
 
 .board {
@@ -251,6 +332,76 @@ body {
    * 字号不会自动跟随，需要按同比例缩小才能保持观感一致。
    */
   --font-scale: calc(4 / var(--size));
+}
+
+/*
+ * 危险预警：空格将尽时棋盘泛红呼吸。
+ * 用伪元素的 opacity 做动画（而不是 box-shadow），合成器可以直接处理，开销更低。
+ */
+.board-danger::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 3px rgba(201, 79, 61, 0.85);
+  pointer-events: none;
+  animation: danger-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes danger-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/*
+ * 连锁震动。两份内容相同、名字不同的动画交替使用：
+ * 重复添加同一个类名不会重播动画，交替类名才能保证每次连锁都晃一下。
+ */
+.board-shake-0 {
+  animation: board-shake-a 260ms ease-in-out both;
+}
+
+.board-shake-1 {
+  animation: board-shake-b 260ms ease-in-out both;
+}
+
+@keyframes board-shake-a {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-4px, 2px);
+  }
+  45% {
+    transform: translate(3px, -2px);
+  }
+  70% {
+    transform: translate(-2px, 1px);
+  }
+}
+
+/* 与 board-shake-a 完全一致，仅为了换名字触发重播 */
+@keyframes board-shake-b {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-4px, 2px);
+  }
+  45% {
+    transform: translate(3px, -2px);
+  }
+  70% {
+    transform: translate(-2px, 1px);
+  }
 }
 
 .grid-bg,
@@ -505,6 +656,60 @@ body {
   justify-content: center;
 }
 
+/* ---------- 局后复盘 ---------- */
+
+.recap {
+  margin: 4px 0 14px;
+  animation: recap-in 420ms 120ms ease-out both;
+}
+
+@keyframes recap-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recap-record {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #b5761c;
+}
+
+.recap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(58px, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.recap-item {
+  text-align: center;
+}
+
+.recap-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(119, 110, 101, 0.8);
+  white-space: nowrap;
+}
+
+.recap-value {
+  margin: 1px 0 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- 底部 ---------- */
 
 .footer {
@@ -532,8 +737,21 @@ body {
   .tile,
   .tile-inner,
   .overlay,
-  .score-gain {
+  .score-gain,
+  .score-record,
+  .recap,
+  .board-shake-0,
+  .board-shake-1 {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
+  }
+
+  /*
+   * 持续闪动的红色脉冲是前庭敏感的触发源，这里彻底关掉动画，
+   * 改为恒定的红框——预警信息仍然传达到，但不再闪。
+   */
+  .board-danger::after {
+    animation: none !important;
+    opacity: 0.8;
   }
 }
